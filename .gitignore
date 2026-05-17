@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# Large data files (not for version control)
+data/raw/
+data/processed/
+
+# Trained model binaries (~50 MB each)
+models/*.keras
+models/*.h5
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
