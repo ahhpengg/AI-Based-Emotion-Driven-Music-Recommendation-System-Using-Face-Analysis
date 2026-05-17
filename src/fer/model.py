@@ -17,32 +17,33 @@ def build_model(dropout: float = 0.3) -> tuple[Model, Model]:
     Returns (full_model, backbone). Pass backbone to unfreeze_top_blocks() before
     Phase 2 training.
 
-    Input contract: float32 images in [0, 255] range, shape (300, 300, 3).
-    Preprocessing to [-1, 1] is embedded inside the model via the Rescaling layer,
-    so no external preprocessing is needed at inference time.
+    Compatible with TF 2.20 / Keras 3. EfficientNetB3 handles preprocessing
+    internally — input must be float32 in [0, 255], no external scaling needed.
     """
+    # Build backbone with input_shape (Keras 3 compatible; avoids input_tensor issues).
+    backbone = tf.keras.applications.EfficientNetB3(
+        include_top=False,
+        weights="imagenet",
+        input_shape=INPUT_SHAPE,
+        pooling=None,
+    )
+    backbone.trainable = False
+
     inputs = layers.Input(shape=INPUT_SHAPE, name="image")
 
-    # Augmentation block — active only when training=True, no-op at inference.
-    # Operates on [0, 255] images, matching the default value_range for RandomBrightness.
+    # Augmentation — active only when training=True, no-op at inference.
+    # Operates on [0, 255] images; value_range default matches this.
     x = layers.RandomFlip("horizontal")(inputs)
     x = layers.RandomRotation(0.028)(x)    # ±10 degrees
     x = layers.RandomZoom(0.1)(x)
     x = layers.RandomBrightness(0.1)(x)
 
-    # Scale [0, 255] → [-1, 1] as EfficientNet expects.
-    # Equivalent to tf.keras.applications.efficientnet.preprocess_input but serialisation-safe.
-    x = layers.Rescaling(scale=1 / 127.5, offset=-1.0, name="efficientnet_preprocess")(x)
+    # Call backbone with training=False to keep BatchNorm in inference mode
+    # throughout both phases. Unfrozen conv weights still receive gradients
+    # because training=False only affects BN/Dropout behaviour, not gradient flow.
+    x = backbone(x, training=False)
 
-    backbone = tf.keras.applications.EfficientNetB3(
-        include_top=False,
-        weights="imagenet",
-        input_tensor=x,
-        pooling=None,
-    )
-    backbone.trainable = False
-
-    x = layers.GlobalAveragePooling2D(name="gap")(backbone.output)
+    x = layers.GlobalAveragePooling2D(name="gap")(x)
     x = layers.Dropout(dropout, name="head_dropout")(x)
     outputs = layers.Dense(NUM_CLASSES, activation="softmax", name="emotion_softmax")(x)
 
@@ -53,9 +54,10 @@ def build_model(dropout: float = 0.3) -> tuple[Model, Model]:
 def unfreeze_top_blocks(backbone: Model) -> None:
     """Unfreeze block6 and block7 of EfficientNetB3 for Phase 2 fine-tuning.
 
-    BatchNormalization layers remain frozen throughout to preserve the pretrained
-    running statistics — updating BN stats on a small dataset corrupts them.
-    Call model.compile() again after this with the lower Phase 2 learning rate.
+    BatchNormalization layers stay frozen (trainable=False) so their gamma/beta
+    parameters do not receive gradient updates. BN running stats are also frozen
+    because the backbone is always called with training=False.
+    Call model.compile() again after this with the Phase 2 learning rate.
     """
     unfreeze = False
     for layer in backbone.layers:
