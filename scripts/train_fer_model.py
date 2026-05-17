@@ -2,8 +2,8 @@
 
 Training (Run on Google Colab):
     !python scripts/train_fer_model.py \
-        --data-dir /content/drive/MyDrive/capstone/raf-db/DATASET \
-        --output-dir /content/drive/MyDrive/capstone/models \
+        --data-dir /content/drive/MyDrive/CP2_FER/raf-db/DATASET \
+        --output-dir /content/drive/MyDrive/CP2_FER/models \
         --epochs-phase1 15 \
         --epochs-phase2 20 \
         --batch-size 32 \
