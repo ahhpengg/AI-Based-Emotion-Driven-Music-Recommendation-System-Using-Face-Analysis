@@ -4,10 +4,19 @@ Training (Run on Google Colab):
     !python scripts/train_fer_model.py \
         --data-dir /content/dataset/DATASET5.0/ \
         --output-dir /content/drive/MyDrive/Capstone_FER/models \
-        --epochs-phase1 15 \
+        --epochs-phase1 20 \
         --epochs-phase2 35 \
         --batch-size 32 \
         --seed 42
+
+Continue from checkpoint (if phase2 disconnected halfway)
+    !python scripts/train_fer_model.py \
+        --data-dir /content/dataset/DATASET5.0 \
+        --output-dir /content/drive/MyDrive/Capstone_FER/models \
+        --epochs-phase2 35 \
+        --batch-size 32 \
+        --seed 42 \
+        --resume-from /content/drive/MyDrive/Capstone_FER/models/fer_model_checkpoint.keras
 """
 
 import argparse
@@ -47,6 +56,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--epochs-phase2", type=int, default=35, help="Max epochs for Phase 2 (default 35).")
     p.add_argument("--batch-size", type=int, default=32, help="Batch size for both phases (default 32).")
     p.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default 42).")
+    p.add_argument(
+        "--resume-from",
+        default=None,
+        help="Path to a Phase 2 checkpoint (.keras) to resume from. Skips Phase 1 entirely.",
+    )
     return p.parse_args()
 
 
@@ -143,22 +157,28 @@ def make_callbacks(output_dir: Path, phase: int, checkpoint_path: Path = None) -
 # ---------------------------------------------------------------------------
 
 def save_training_curves(history1, history2, output_dir: Path) -> None:
-    n1 = len(history1.history["accuracy"])
     n2 = len(history2.history["accuracy"])
-    ep1 = range(1, n1 + 1)
-    ep2 = range(n1 + 1, n1 + n2 + 1)
+    resuming = history1 is None
+
+    if resuming:
+        ep2 = range(1, n2 + 1)
+    else:
+        n1 = len(history1.history["accuracy"])
+        ep1 = range(1, n1 + 1)
+        ep2 = range(n1 + 1, n1 + n2 + 1)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
     for ax, metric in zip((ax1, ax2), ("accuracy", "loss")):
-        ax.plot(ep1, history1.history[metric], "b-", label="train (phase 1)")
-        ax.plot(ep1, history1.history[f"val_{metric}"], "b--", label="val (phase 1)")
+        if not resuming:
+            ax.plot(ep1, history1.history[metric], "b-", label="train (phase 1)")
+            ax.plot(ep1, history1.history[f"val_{metric}"], "b--", label="val (phase 1)")
+            ax.axvline(n1 + 0.5, color="gray", linestyle=":", label="phase boundary")
         ax.plot(ep2, history2.history[metric], "r-", label="train (phase 2)")
         ax.plot(ep2, history2.history[f"val_{metric}"], "r--", label="val (phase 2)")
-        ax.axvline(n1 + 0.5, color="gray", linestyle=":", label="phase boundary")
         ax.set_xlabel("Epoch")
         ax.set_ylabel(metric.capitalize())
-        ax.set_title(metric.capitalize())
+        ax.set_title(metric.capitalize() + (" (resumed)" if resuming else ""))
         ax.legend()
 
     fig.tight_layout()
@@ -246,35 +266,45 @@ def main() -> None:
     for idx, w in class_weights.items():
         print(f"  {idx}  {EMOTION_LABELS[idx]:<10}  {w:.4f}")
 
-    # ---- Build model (Phase 1: backbone frozen) ------------------------------
-    model, backbone = build_model()
-    model.summary(show_trainable=True)
+    history1 = None
 
-    # ---- Phase 1 ------------------------------------------------------------
-    print("\n=== Phase 1: training head only (backbone frozen) ===")
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-        loss="sparse_categorical_crossentropy",
-        metrics=[
-            "accuracy",
-            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2, name="top2_accuracy"),
-        ],
-    )
-    history1 = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=args.epochs_phase1,
-        class_weight=class_weights,
-        callbacks=make_callbacks(output_dir, phase=1),
-        verbose=1,
-    )
-    print(f"Phase 1 best val_accuracy: {max(history1.history['val_accuracy']):.4f}")
+    if args.resume_from:
+        # ---- Resume from Phase 2 checkpoint (skip Phase 1) ------------------
+        print(f"\nResuming Phase 2 from checkpoint: {args.resume_from}")
+        print("Phase 1 skipped — backbone unfreeze state restored from checkpoint.")
+        model = tf.keras.models.load_model(args.resume_from, compile=False)
+        model.summary(show_trainable=True)
+    else:
+        # ---- Build model (Phase 1: backbone frozen) --------------------------
+        model, backbone = build_model()
+        model.summary(show_trainable=True)
+
+        # ---- Phase 1 --------------------------------------------------------
+        print("\n=== Phase 1: training head only (backbone frozen) ===")
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+            loss="sparse_categorical_crossentropy",
+            metrics=[
+                "accuracy",
+                tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2, name="top2_accuracy"),
+            ],
+        )
+        history1 = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=args.epochs_phase1,
+            class_weight=class_weights,
+            callbacks=make_callbacks(output_dir, phase=1),
+            verbose=1,
+        )
+        print(f"Phase 1 best val_accuracy: {max(history1.history['val_accuracy']):.4f}")
+
+        # ---- Unfreeze for Phase 2 -------------------------------------------
+        unfreeze_top_blocks(backbone)
 
     # ---- Phase 2 ------------------------------------------------------------
     print("\n=== Phase 2: fine-tuning block5+ (BatchNorm frozen) ===")
-    unfreeze_top_blocks(backbone)
-
-    # Recompile so the optimiser registers the newly trainable variables.
+    # Recompile so the optimiser registers the correct trainable variables.
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
         loss="sparse_categorical_crossentropy",
@@ -301,7 +331,7 @@ def main() -> None:
 
     # ---- Save training history ----------------------------------------------
     history_combined = {
-        "phase1": {k: [float(v) for v in vals] for k, vals in history1.history.items()},
+        "phase1": {k: [float(v) for v in vals] for k, vals in history1.history.items()} if history1 else {},
         "phase2": {k: [float(v) for v in vals] for k, vals in history2.history.items()},
     }
     history_path = output_dir / "training_history.json"
