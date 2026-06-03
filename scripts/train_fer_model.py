@@ -33,7 +33,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.utils.class_weight import compute_class_weight
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +88,7 @@ def load_datasets(
 ):
     import tensorflow as tf
 
-    common = dict(image_size=(300, 300), batch_size=batch_size, label_mode="int", seed=seed)
+    common = dict(image_size=(300, 300), batch_size=batch_size, label_mode="categorical", seed=seed)
 
     train_ds = tf.keras.utils.image_dataset_from_directory(str(train_dir), **common)
     val_ds = tf.keras.utils.image_dataset_from_directory(str(val_dir), **common)
@@ -104,21 +103,6 @@ def load_datasets(
         val_ds.prefetch(autotune),
         test_ds.prefetch(autotune),
     )
-
-
-# ---------------------------------------------------------------------------
-# Class weights
-# ---------------------------------------------------------------------------
-
-def compute_class_weights_from_dir(train_dir: Path, num_classes: int) -> dict[int, float]:
-    """Compute balanced class weights by counting files in each class subfolder."""
-    class_dirs = sorted([d for d in train_dir.iterdir() if d.is_dir()], key=lambda d: d.name)
-    labels = []
-    for idx, d in enumerate(class_dirs):
-        count = sum(1 for f in d.iterdir() if f.is_file())
-        labels.extend([idx] * count)
-    weights = compute_class_weight("balanced", classes=np.arange(num_classes), y=labels)
-    return dict(enumerate(weights))
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +186,7 @@ def save_training_curves(history1, history2, output_dir: Path) -> None:
 
 def save_evaluation(model, test_ds, output_dir: Path, emotion_labels: list[str]) -> None:
     print("\nRunning evaluation on test set...")
-    all_labels = np.concatenate([y.numpy() for _, y in test_ds])
+    all_labels = np.argmax(np.concatenate([y.numpy() for _, y in test_ds]), axis=1)
     all_probs = model.predict(test_ds, verbose=1)
     all_preds = np.argmax(all_probs, axis=1)
 
@@ -254,7 +238,7 @@ def main() -> None:
     set_seeds(args.seed)
 
     import tensorflow as tf
-    from src.fer.model import EMOTION_LABELS, NUM_CLASSES, build_model, unfreeze_top_blocks
+    from src.fer.model import EMOTION_LABELS, build_model, unfreeze_top_blocks
 
     data_dir = Path(args.data_dir)
     train_dir = data_dir / "train"
@@ -272,11 +256,6 @@ def main() -> None:
 
     # ---- Data ---------------------------------------------------------------
     train_ds, val_ds, test_ds = load_datasets(train_dir, val_dir, test_dir, args.batch_size, args.seed)
-    class_weights = compute_class_weights_from_dir(train_dir, NUM_CLASSES)
-
-    print("\nClass weights (balanced):")
-    for idx, w in class_weights.items():
-        print(f"  {idx}  {EMOTION_LABELS[idx]:<10}  {w:.4f}")
 
     history1 = None
 
@@ -295,10 +274,10 @@ def main() -> None:
         print("\n=== Phase 1: training head only (backbone frozen) ===")
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-            loss="sparse_categorical_crossentropy",
+            loss=tf.keras.losses.CategoricalFocalCrossentropy(gamma=2.0, alpha=0.25),
             metrics=[
                 "accuracy",
-                tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2, name="top2_accuracy"),
+                tf.keras.metrics.TopKCategoricalAccuracy(k=2, name="top2_accuracy"),
             ],
         )
         phase1_checkpoint_path = output_dir / "fer_phase1_best.keras"
@@ -306,7 +285,6 @@ def main() -> None:
             train_ds,
             validation_data=val_ds,
             epochs=args.epochs_phase1,
-            class_weight=class_weights,
             callbacks=make_callbacks(output_dir, phase=1, checkpoint_path=phase1_checkpoint_path),
             verbose=1,
         )
@@ -323,10 +301,10 @@ def main() -> None:
     # Recompile so the optimiser registers the correct trainable variables.
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
-        loss="sparse_categorical_crossentropy",
+        loss=tf.keras.losses.CategoricalFocalCrossentropy(gamma=2.0, alpha=0.25),
         metrics=[
             "accuracy",
-            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=2, name="top2_accuracy"),
+            tf.keras.metrics.TopKCategoricalAccuracy(k=2, name="top2_accuracy"),
         ],
     )
     checkpoint_path = output_dir / "fer_model_checkpoint.keras"
@@ -334,7 +312,6 @@ def main() -> None:
         train_ds,
         validation_data=val_ds,
         epochs=args.epochs_phase2,
-        class_weight=class_weights,
         callbacks=make_callbacks(output_dir, phase=2, checkpoint_path=checkpoint_path),
         verbose=1,
     )
