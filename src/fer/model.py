@@ -11,7 +11,7 @@ EMOTION_LABELS = ["surprise", "fear", "disgust", "happy", "sad", "angry", "neutr
 IN_SCOPE = {"surprise", "happy", "sad", "angry", "neutral"}
 
 
-@tf.keras.saving.register_keras_serializable(package="fer")
+@tf.keras.utils.register_keras_serializable(package="fer")
 class CBAM(layers.Layer):
     """Convolutional Block Attention Module (Woo et al., 2018).
 
