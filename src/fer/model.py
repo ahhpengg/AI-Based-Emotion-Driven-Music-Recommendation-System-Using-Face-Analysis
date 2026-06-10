@@ -4,12 +4,65 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model
 
 NUM_CLASSES = 7
-INPUT_SHAPE = (300, 300, 1)            # grayscale input from the dataset loader
-BACKBONE_INPUT_SHAPE = (300, 300, 3)   # EfficientNetB3 needs 3 channels for ImageNet weights
+INPUT_SHAPE = (300, 300, 3)
 
 # Fixed label order matches RAF-DB folder indices 1–7 mapped to 0–6.
 EMOTION_LABELS = ["surprise", "fear", "disgust", "happy", "sad", "angry", "neutral"]
 IN_SCOPE = {"surprise", "happy", "sad", "angry", "neutral"}
+
+
+@tf.keras.saving.register_keras_serializable(package="fer")
+class CBAM(layers.Layer):
+    """Convolutional Block Attention Module (Woo et al., 2018).
+
+    Applies channel attention (shared MLP over avg- and max-pooled features) followed
+    by spatial attention (7x7 conv over channel-wise mean and max maps). Each sub-module
+    multiplies the input by a sigmoid-activated attention mask, so the layer is a
+    no-op at initialisation if the masks saturate to 1.
+    """
+
+    def __init__(self, reduction_ratio: int = 16, spatial_kernel_size: int = 7, **kwargs):
+        super().__init__(**kwargs)
+        self.reduction_ratio = reduction_ratio
+        self.spatial_kernel_size = spatial_kernel_size
+
+    def build(self, input_shape):
+        channels = int(input_shape[-1])
+        hidden = max(channels // self.reduction_ratio, 1)
+        self.mlp_hidden = layers.Dense(hidden, activation="relu", name="channel_mlp_hidden")
+        self.mlp_output = layers.Dense(channels, name="channel_mlp_output")
+        self.spatial_conv = layers.Conv2D(
+            filters=1,
+            kernel_size=self.spatial_kernel_size,
+            padding="same",
+            activation="sigmoid",
+            use_bias=False,
+            name="spatial_conv",
+        )
+        super().build(input_shape)
+
+    def call(self, x):
+        # Channel attention — shared MLP over avg-pooled and max-pooled descriptors.
+        avg = tf.reduce_mean(x, axis=[1, 2], keepdims=True)
+        mx = tf.reduce_max(x, axis=[1, 2], keepdims=True)
+        channel_att = tf.nn.sigmoid(
+            self.mlp_output(self.mlp_hidden(avg)) + self.mlp_output(self.mlp_hidden(mx))
+        )
+        x = x * channel_att
+
+        # Spatial attention — channel-wise pooled maps fed through a single conv.
+        avg_s = tf.reduce_mean(x, axis=-1, keepdims=True)
+        max_s = tf.reduce_max(x, axis=-1, keepdims=True)
+        spatial_att = self.spatial_conv(tf.concat([avg_s, max_s], axis=-1))
+        return x * spatial_att
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "reduction_ratio": self.reduction_ratio,
+            "spatial_kernel_size": self.spatial_kernel_size,
+        })
+        return config
 
 
 def build_model(dropout: float = 0.3) -> tuple[Model, Model]:
@@ -25,21 +78,16 @@ def build_model(dropout: float = 0.3) -> tuple[Model, Model]:
     backbone = tf.keras.applications.EfficientNetB3(
         include_top=False,
         weights="imagenet",
-        input_shape=BACKBONE_INPUT_SHAPE,
+        input_shape=INPUT_SHAPE,
         pooling=None,
     )
     backbone.trainable = False
 
     inputs = layers.Input(shape=INPUT_SHAPE, name="image")
 
-    # Replicate the single grayscale channel 3× so the ImageNet-pretrained backbone
-    # (which expects RGB) sees a valid 3-channel tensor. All three channels carry
-    # identical intensity information.
-    x = layers.Concatenate(axis=-1, name="gray_to_rgb")([inputs, inputs, inputs])
-
     # Augmentation — active only when training=True, no-op at inference.
     # Operates on [0, 255] images; value_range default matches this.
-    x = layers.RandomFlip("horizontal")(x)
+    x = layers.RandomFlip("horizontal")(inputs)
     x = layers.RandomRotation(0.028)(x)    # ±10 degrees
     x = layers.RandomZoom(0.1)(x)
     x = layers.RandomBrightness(0.1)(x)
@@ -48,6 +96,9 @@ def build_model(dropout: float = 0.3) -> tuple[Model, Model]:
     # throughout both phases. Unfrozen conv weights still receive gradients
     # because training=False only affects BN/Dropout behaviour, not gradient flow.
     x = backbone(x, training=False)
+
+    # Channel + spatial attention over the (10, 10, 1536) backbone feature map.
+    x = CBAM(reduction_ratio=16, spatial_kernel_size=7, name="cbam")(x)
 
     x = layers.GlobalAveragePooling2D(name="gap")(x)
     x = layers.Dropout(dropout, name="head_dropout")(x)

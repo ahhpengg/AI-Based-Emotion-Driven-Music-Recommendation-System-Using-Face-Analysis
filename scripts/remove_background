@@ -1,0 +1,42 @@
+import os
+from rembg import remove, new_session
+from PIL import Image
+import io
+
+input_folder = "C:/Users/Acer/Documents/AffectNet/test/1"
+output_folder = "C:/Users/Acer/Documents/AffectNet/test/removed_1"
+
+os.makedirs(output_folder, exist_ok=True)
+
+valid_ext = (".jpg", ".jpeg", ".png", ".bmp")
+
+# isnet-general-use handles people/portraits better than the default u2net
+session = new_session("isnet-general-use")
+
+for filename in os.listdir(input_folder):
+    if not filename.lower().endswith(valid_ext):
+        continue
+
+    input_path = os.path.join(input_folder, filename)
+    with open(input_path, "rb") as f:
+        input_data = f.read()
+
+    output_data = remove(
+        input_data,
+        session=session,
+        alpha_matting=True,              # smoother edges around hair
+        alpha_matting_foreground_threshold=240,
+        alpha_matting_background_threshold=10,
+        alpha_matting_erode_size=10,
+    )
+    fg = Image.open(io.BytesIO(output_data)).convert("RGBA")
+
+    white_bg = Image.new("RGBA", fg.size, (255, 255, 255, 255))
+    combined = Image.alpha_composite(white_bg, fg).convert("RGB")
+
+    # RAF-DB aligned images are 100x100; keep original size, no resize
+    out_name = os.path.splitext(filename)[0] + ".jpg"
+    combined.save(os.path.join(output_folder, out_name), quality=95)
+    print(f"Processed: {filename}")
+
+print("Done.")

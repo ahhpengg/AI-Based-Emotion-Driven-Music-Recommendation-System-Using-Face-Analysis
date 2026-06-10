@@ -2,7 +2,7 @@
 
 Training (Run on Google Colab):
     !python scripts/train_fer_model.py \
-        --data-dir /content/dataset/DATASET10.0/ \
+        --data-dir /content/dataset/DATASET3.0/ \
         --output-dir /content/drive/MyDrive/Capstone_FER/models \
         --epochs-phase1 25 \
         --epochs-phase2 35 \
@@ -11,7 +11,7 @@ Training (Run on Google Colab):
 
 Continue from checkpoint (if phase2 disconnected halfway)
     !python scripts/train_fer_model.py \
-        --data-dir /content/dataset/DATASET10.0 \
+        --data-dir /content/dataset/DATASET3.0 \
         --output-dir /content/drive/MyDrive/Capstone_FER/models \
         --epochs-phase2 35 \
         --batch-size 32 \
@@ -92,7 +92,6 @@ def load_datasets(
         image_size=(300, 300),
         batch_size=batch_size,
         label_mode="categorical",
-        color_mode="grayscale",
         seed=seed,
     )
 
