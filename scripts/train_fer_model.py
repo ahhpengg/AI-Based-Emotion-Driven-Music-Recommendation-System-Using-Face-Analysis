@@ -5,17 +5,19 @@ Training (Run on Google Colab):
         --data-dir /content/dataset/DATASET10.0/ \
         --output-dir /content/drive/MyDrive/Capstone_FER/models \
         --epochs-phase1 25 \
-        --epochs-phase2 35 \
+        --epochs-phase2 55 \
         --batch-size 32 \
-        --seed 42
+        --seed 42 \
+        --mixup-alpha 0.2 
 
 Continue from checkpoint (if phase2 disconnected halfway)
     !python scripts/train_fer_model.py \
         --data-dir /content/dataset/DATASET10.0 \
         --output-dir /content/drive/MyDrive/Capstone_FER/models \
-        --epochs-phase2 35 \
+        --epochs-phase2 55 \
         --batch-size 32 \
         --seed 42 \
+        --mixup-alpha 0.2 \
         --resume-from /content/drive/MyDrive/Capstone_FER/models/fer_model_checkpoint.keras
 """
 
@@ -40,11 +42,11 @@ from sklearn.metrics import classification_report, confusion_matrix
 # ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Train EfficientNet-B3 emotion classifier on RAF-DB+AffectNet.")
+    p = argparse.ArgumentParser(description="Train EfficientNet-B3 emotion classifier on RAF-DB.")
     p.add_argument(
         "--data-dir",
         required=True,
-        help="Path to the RAF-DB+AffectNet DATASET/ folder (must contain train/, val/ and test/ subdirs).",
+        help="Path to the RAF-DB DATASET/ folder (must contain train/, val/ and test/ subdirs).",
     )
     p.add_argument(
         "--output-dir",
@@ -52,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         help="Directory where the model and artefacts will be saved.",
     )
     p.add_argument("--epochs-phase1", type=int, default=25, help="Max epochs for Phase 1 (default 25).")
-    p.add_argument("--epochs-phase2", type=int, default=35, help="Max epochs for Phase 2 (default 35).")
+    p.add_argument("--epochs-phase2", type=int, default=55, help="Max epochs for Phase 2 (default 55).")
     p.add_argument("--batch-size", type=int, default=32, help="Batch size for both phases (default 32).")
     p.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default 42).")
     p.add_argument(
@@ -345,7 +347,7 @@ def main() -> None:
         unfreeze_top_blocks(backbone)
 
     # ---- Phase 2 ------------------------------------------------------------
-    print("\n=== Phase 2: fine-tuning block5+ (BatchNorm frozen) ===")
+    print("\n=== Phase 2: fine-tuning block4+ (BatchNorm frozen) ===")
     # Recompile so the optimiser registers the correct trainable variables.
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
