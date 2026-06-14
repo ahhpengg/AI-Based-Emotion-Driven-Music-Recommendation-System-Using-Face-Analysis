@@ -4,11 +4,12 @@ Training (Run on Google Colab):
     !python scripts/train_fer_model.py \
         --data-dir /content/dataset/DATASET10.0/ \
         --output-dir /content/drive/MyDrive/Capstone_FER/models \
-        --epochs-phase1 25 \
+        --epochs-phase1 35 \
         --epochs-phase2 55 \
         --batch-size 32 \
         --seed 42 \
-        --mixup-alpha 0.2 
+        --mixup-alpha 0.2 \
+        --label-smoothing 0.1
 
 Continue from checkpoint (if phase2 disconnected halfway)
     !python scripts/train_fer_model.py \
@@ -18,6 +19,7 @@ Continue from checkpoint (if phase2 disconnected halfway)
         --batch-size 32 \
         --seed 42 \
         --mixup-alpha 0.2 \
+        --label-smoothing 0.1 \
         --resume-from /content/drive/MyDrive/Capstone_FER/models/fer_model_checkpoint.keras
 """
 
@@ -53,7 +55,7 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Directory where the model and artefacts will be saved.",
     )
-    p.add_argument("--epochs-phase1", type=int, default=25, help="Max epochs for Phase 1 (default 25).")
+    p.add_argument("--epochs-phase1", type=int, default=35, help="Max epochs for Phase 1 (default 35).")
     p.add_argument("--epochs-phase2", type=int, default=55, help="Max epochs for Phase 2 (default 55).")
     p.add_argument("--batch-size", type=int, default=32, help="Batch size for both phases (default 32).")
     p.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default 42).")
