@@ -64,6 +64,12 @@ def parse_args() -> argparse.Namespace:
         help="Alpha for Beta(α,α) MixUp sampling on training batches. Set 0.0 to disable (default 0.2).",
     )
     p.add_argument(
+        "--label-smoothing",
+        type=float,
+        default=0.1,
+        help="Label smoothing factor for CategoricalFocalCrossentropy. Set 0.0 to disable (default 0.1).",
+    )
+    p.add_argument(
         "--resume-from",
         default=None,
         help="Path to a Phase 2 checkpoint (.keras) to resume from. Skips Phase 1 entirely.",
@@ -300,6 +306,7 @@ def main() -> None:
     print(f"Test dir           : {test_dir}")
     print(f"Output dir         : {output_dir}")
     print(f"MixUp alpha        : {args.mixup_alpha}  ({'enabled' if args.mixup_alpha > 0 else 'disabled'})")
+    print(f"Label smoothing    : {args.label_smoothing}  ({'enabled' if args.label_smoothing > 0 else 'disabled'})")
 
     # ---- Data ---------------------------------------------------------------
     train_ds, val_ds, test_ds = load_datasets(
@@ -324,7 +331,9 @@ def main() -> None:
         print("\n=== Phase 1: training head only (backbone frozen) ===")
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-            loss=tf.keras.losses.CategoricalFocalCrossentropy(gamma=2.0, alpha=0.25),
+            loss=tf.keras.losses.CategoricalFocalCrossentropy(
+                gamma=2.0, alpha=0.25, label_smoothing=args.label_smoothing,
+            ),
             metrics=[
                 "accuracy",
                 tf.keras.metrics.TopKCategoricalAccuracy(k=2, name="top2_accuracy"),
@@ -351,7 +360,9 @@ def main() -> None:
     # Recompile so the optimiser registers the correct trainable variables.
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
-        loss=tf.keras.losses.CategoricalFocalCrossentropy(gamma=2.0, alpha=0.25),
+        loss=tf.keras.losses.CategoricalFocalCrossentropy(
+            gamma=2.0, alpha=0.25, label_smoothing=args.label_smoothing,
+        ),
         metrics=[
             "accuracy",
             tf.keras.metrics.TopKCategoricalAccuracy(k=2, name="top2_accuracy"),

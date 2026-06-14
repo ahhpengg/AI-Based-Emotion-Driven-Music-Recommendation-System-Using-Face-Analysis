@@ -43,6 +43,7 @@ def build_model(dropout: float = 0.3) -> tuple[Model, Model]:
     x = layers.RandomRotation(0.028)(x)    # ±10 degrees
     x = layers.RandomZoom(0.1)(x)
     x = layers.RandomBrightness(0.1)(x)
+    x = layers.RandomContrast(0.1)(x)
 
     # Call backbone with training=False to keep BatchNorm in inference mode
     # throughout both phases. Unfrozen conv weights still receive gradients
