@@ -1,0 +1,91 @@
+"""
+Background-removal + face-normalisation preprocessing for AffectNet datasets.
+
+Pipeline per image:
+  1. Remove the background with rembg (foreground -> opaque, background -> alpha 0).
+  2. Convert the foreground to grayscale.
+  3. Replace the background with a neutral gray (128).
+  4. Crop tightly to the foreground ("detected face") bounding box so the face
+     fills the frame and surrounding gray noise is minimised.
+  5. Scale to 300x300 (EfficientNet-B3 input) keeping the ORIGINAL proportion;
+     the shorter side is padded with the same neutral gray, so the face is
+     zoomed to touch the frame edges without ever being warped.
+
+The rembg session is created ONCE and reused across the dataset (much faster),
+mirroring the FaceMesh-reuse pattern in scripts/face_cropper.
+"""
+
+import os
+
+import numpy as np
+from PIL import Image, ImageOps
+from rembg import remove, new_session
+
+# ============================================================
+#  EDIT THESE, THEN JUST RUN THE FILE
+# ============================================================
+input_folder = "C:/Users/Acer/Documents/AffectNet/val/2"
+output_folder = "C:/Users/Acer/Documents/AffectNet/val/testing_2"
+
+OUT_SIZE = 300          # final square size (EfficientNet-B3 native input)
+BG_GRAY = 128           # neutral gray for both background and padding
+ALPHA_THRESHOLD = 10    # alpha values above this count as foreground
+# ============================================================
+
+os.makedirs(output_folder, exist_ok=True)
+
+# One session, reused for every image in the dataset.
+session = new_session("u2net")
+
+
+def process(input_path):
+    """Return a 300x300 grayscale PIL image, or None if no foreground found."""
+    img = Image.open(input_path).convert("RGBA")
+
+    # 1. Remove background -> RGBA, background becomes transparent (alpha 0).
+    cut = np.asarray(remove(img, session=session))  # H x W x 4
+    alpha = cut[:, :, 3]
+    mask = alpha > ALPHA_THRESHOLD                   # foreground pixels
+
+    # No subject detected -> skip (never inject a blank/background-only sample).
+    ys, xs = np.where(mask)
+    if xs.size == 0:
+        return None
+
+    # 2. Grayscale the colour channels.
+    gray = np.asarray(Image.fromarray(cut[:, :, :3]).convert("L"))  # H x W
+
+    # 3. Background -> neutral gray 128.
+    gray = np.where(mask, gray, BG_GRAY).astype(np.uint8)
+
+    # 4. Crop tightly to the foreground bounding box (zoom onto the face).
+    x0, x1 = xs.min(), xs.max() + 1
+    y0, y1 = ys.min(), ys.max() + 1
+    face = Image.fromarray(gray[y0:y1, x0:x1], mode="L")
+
+    # 5. Fit to OUT_SIZE x OUT_SIZE keeping aspect ratio; pad with the same gray
+    #    so the longest side sticks to the frame and the face is never warped.
+    return ImageOps.pad(face, (OUT_SIZE, OUT_SIZE), color=BG_GRAY,
+                        centering=(0.5, 0.5))
+
+
+def main():
+    processed = skipped = 0
+    for file in os.listdir(input_folder):
+        if not file.lower().endswith((".png", ".jpg", ".jpeg")):
+            continue
+
+        result = process(os.path.join(input_folder, file))
+        if result is None:
+            skipped += 1
+            print(f"skipped (no foreground): {file}")
+            continue
+
+        result.save(os.path.join(output_folder, file))
+        processed += 1
+
+    print(f"Done! Processed {processed} images, skipped {skipped}.")
+
+
+if __name__ == "__main__":
+    main()
