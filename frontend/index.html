@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>MoodStream</title>
+  <!--
+    Static landing page for the design import.
+
+    In the finished app this is the auth gate (check Spotify session + Premium,
+    then route to login / premium_required / home) as described in
+    docs/FRONTEND.md > index.html. For now it simply enters the home screen.
+  -->
+  <meta http-equiv="refresh" content="0; url=pages/home.html">
+  <link rel="stylesheet" href="css/fonts.css">
+  <script>window.location.replace("pages/home.html");</script>
+</head>
+<body class="bg-background text-on-background" style="background:#0b1326;color:#dae2fd;font-family:Inter,system-ui,sans-serif;">
+  <noscript><a href="pages/home.html">Enter MoodStream</a></noscript>
+</body>
+</html>

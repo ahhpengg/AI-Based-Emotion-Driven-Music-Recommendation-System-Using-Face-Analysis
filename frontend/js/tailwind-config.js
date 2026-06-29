@@ -1,0 +1,100 @@
+/*
+ * Shared Tailwind theme for MoodStream ("Vibe Canvas" design system).
+ *
+ * Loaded on every page immediately AFTER js/vendor/tailwind.js (the vendored
+ * Tailwind Play CDN build). The Play build reads this global `tailwind.config`
+ * and JITs the utility classes in-browser — no build step. See docs/FRONTEND.md.
+ *
+ * Source of truth: the Stitch design export (DESIGN.md) for colours, type and
+ * spacing tokens. Keep this in sync with frontend/css/fonts.css.
+ */
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "background": "#0b1326",
+        "on-background": "#dae2fd",
+        "surface": "#0b1326",
+        "surface-dim": "#0b1326",
+        "surface-bright": "#31394d",
+        "surface-container-lowest": "#060e20",
+        "surface-container-low": "#131b2e",
+        "surface-container": "#171f33",
+        "surface-container-high": "#222a3d",
+        "surface-container-highest": "#2d3449",
+        "surface-variant": "#2d3449",
+        "on-surface": "#dae2fd",
+        "on-surface-variant": "#cfc2d6",
+        "inverse-surface": "#dae2fd",
+        "inverse-on-surface": "#283044",
+        "outline": "#988d9f",
+        "outline-variant": "#4d4354",
+        "surface-tint": "#ddb7ff",
+        "primary": "#ddb7ff",
+        "on-primary": "#490080",
+        "primary-container": "#b76dff",
+        "on-primary-container": "#400071",
+        "inverse-primary": "#842bd2",
+        "secondary": "#4edea3",
+        "on-secondary": "#003824",
+        "secondary-container": "#00a572",
+        "on-secondary-container": "#00311f",
+        "tertiary": "#adc6ff",
+        "on-tertiary": "#002e6a",
+        "tertiary-container": "#4d8eff",
+        "on-tertiary-container": "#00285d",
+        "error": "#ffb4ab",
+        "on-error": "#690005",
+        "error-container": "#93000a",
+        "on-error-container": "#ffdad6",
+        "primary-fixed": "#f0dbff",
+        "primary-fixed-dim": "#ddb7ff",
+        "on-primary-fixed": "#2c0051",
+        "on-primary-fixed-variant": "#6900b3",
+        "secondary-fixed": "#6ffbbe",
+        "secondary-fixed-dim": "#4edea3",
+        "on-secondary-fixed": "#002113",
+        "on-secondary-fixed-variant": "#005236",
+        "tertiary-fixed": "#d8e2ff",
+        "tertiary-fixed-dim": "#adc6ff",
+        "on-tertiary-fixed": "#001a42",
+        "on-tertiary-fixed-variant": "#004395",
+      },
+      borderRadius: {
+        "DEFAULT": "0.25rem",
+        "lg": "0.5rem",
+        "xl": "0.75rem",
+        "full": "9999px",
+      },
+      spacing: {
+        "base": "8px",
+        "stack-sm": "12px",
+        "stack-md": "24px",
+        "stack-lg": "48px",
+        "gutter": "24px",
+        "container-padding": "32px",
+      },
+      fontFamily: {
+        "headline-xl": ["Montserrat"],
+        "headline-lg": ["Montserrat"],
+        "headline-lg-mobile": ["Montserrat"],
+        "headline-md": ["Montserrat"],
+        "body-lg": ["Inter"],
+        "body-md": ["Inter"],
+        "label-md": ["Inter"],
+        "label-sm": ["Inter"],
+      },
+      fontSize: {
+        "headline-xl": ["48px", { lineHeight: "1.2", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "headline-lg": ["32px", { lineHeight: "1.3", fontWeight: "600" }],
+        "headline-lg-mobile": ["24px", { lineHeight: "1.3", fontWeight: "600" }],
+        "headline-md": ["24px", { lineHeight: "1.4", fontWeight: "600" }],
+        "body-lg": ["18px", { lineHeight: "1.6", fontWeight: "400" }],
+        "body-md": ["16px", { lineHeight: "1.6", fontWeight: "400" }],
+        "label-md": ["14px", { lineHeight: "1.4", letterSpacing: "0.01em", fontWeight: "500" }],
+        "label-sm": ["12px", { lineHeight: "1.2", fontWeight: "600" }],
+      },
+    },
+  },
+};

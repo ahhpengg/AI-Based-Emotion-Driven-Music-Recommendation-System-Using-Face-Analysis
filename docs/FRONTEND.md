@@ -11,8 +11,8 @@ For the Python side of the bridge, see `docs/SPOTIFY_INTEGRATION.md` and the `ap
 | Decision | Choice | Why |
 |---|---|---|
 | Framework | None — vanilla HTML/CSS/JS | Minimum dependencies for a solo capstone. No build step. |
-| Module system | Native ES modules (`<script type="module">`) | Supported in Chromium-based webviews. No bundler needed. |
-| CSS approach | One stylesheet per page + a shared `base.css` | Small project; component libraries are overkill |
+| Module system | Native ES modules (`<script type="module">`) for bridge logic; plain scripts for the imported design pages | Supported in Chromium-based webviews. No bundler needed. |
+| CSS approach | Tailwind utility classes via a **vendored** Tailwind Play build (`js/vendor/tailwind.js`, JIT in-browser, **no build step**) + shared `css/app.css` (custom effects) + `css/fonts.css` (self-hosted webfonts) | The high-fidelity prototype was authored in Google Stitch on Tailwind. Vendoring the Play build keeps it pixel-faithful and fully offline without a Node build step. Tailwind is a CSS utility layer, **not** a JS framework — the "no React/Vue" rule still holds. |
 | Templating | None — DOM manipulation directly | Pages are few and simple |
 | Routing | Window-level navigation between HTML files | PyWebView allows `window.location = 'pages/result.html'`; no SPA router needed |
 | Audio | Spotify Web Playback SDK | See `docs/SPOTIFY_INTEGRATION.md` |
@@ -22,37 +22,64 @@ For the Python side of the bridge, see `docs/SPOTIFY_INTEGRATION.md` and the `ap
 
 ---
 
+## High-fidelity design import (MoodStream / "Vibe Canvas")
+
+The CP2 high-fidelity prototype was designed in **Google Stitch** and exported as Tailwind HTML (see the *Prototype Interfaces Code* PDF and `DESIGN.md`). It has been imported as **static, faithful pages** — full look-and-feel with plain `window.location` navigation between screens, but **no Python bridge calls yet**. The bridge/camera/playback wiring described further down is layered on next, replacing the placeholder navigation.
+
+Vendored, fully-offline dependencies (no internet needed to render):
+
+- `frontend/js/vendor/tailwind.js` — Tailwind Play build (with the `forms` + `container-queries` plugins). JITs utilities in-browser; no build step.
+- `frontend/js/tailwind-config.js` — shared theme (colours / type / spacing tokens). Loaded **immediately after** `tailwind.js` on every page.
+- `frontend/css/fonts.css` — self-hosted Inter (400/500/600), Montserrat (600/700) and Material Symbols Outlined (`frontend/assets/fonts/*.woff2`).
+- `frontend/css/app.css` — hand-written effects from the prototype `<style>` blocks (entrance animation, scrollbar, camera/scanner/glass/glow/progress).
+
+Content imagery from the Stitch export (avatars, album art, hero/emoji/illustration graphics) pointed at expiring Google CDN URLs, so it is replaced with on-brand **Material Symbols** placeholders and gradient tiles. Real artwork arrives at runtime (Spotify profile avatar, album covers from the catalogue).
+
 ## Pages
 
-Per CP1 §3.5, there are 6 pages plus the OAuth/Premium gating screens at first launch.
+Per CP1 §3.5, there are 6 core pages plus the OAuth/Premium gating screens at first launch. Current state after the design import (✅ imported, ⬜ not built yet):
 
 ```
 frontend/
-├── index.html              ← landing; routes based on auth state
+├── index.html              ✅ landing (static: redirects to home; becomes the auth gate)
 ├── pages/
-│   ├── login.html          ← Spotify login button, Premium-required notice
-│   ├── premium_required.html ← shown when /me returns product != "premium"
-│   ├── home.html           ← main screen (Figure 17 in planning doc)
-│   ├── photo.html          ← webcam capture (Figure 18)
-│   ├── mood.html           ← manual mood selection (Figure 19)
-│   ├── loading.html        ← inference in progress (Figure 20)
-│   ├── result.html         ← recommended playlist (Figure 22)
-│   └── error.html          ← error states with retry (Figure 21)
+│   ├── login.html          ⬜ Spotify login button, Premium-required notice
+│   ├── premium_required.html ⬜ shown when /me returns product != "premium"
+│   ├── home.html           ✅ main screen — emotion scanner + manual chips + sample playlist
+│   ├── photo.html          ✅ webcam capture (viewfinder, scan line, detection oval)
+│   ├── mood.html           ✅ manual mood selection (5 emotion cards)
+│   ├── loading.html        ✅ "Analyzing Emotion…" (rings + progress)
+│   ├── result.html         ✅ recommended playlist (data-driven per emotion)
+│   └── error.html          ✅ out-of-scope / failure state with "Back to Home"
 ├── css/
-│   ├── base.css            ← shared: colours, typography, layout primitives
-│   ├── sidebar.css         ← shared sidebar with saved playlists
-│   └── pages/*.css         ← per-page styles
+│   ├── fonts.css           ✅ self-hosted @font-face + Material Symbols base
+│   └── app.css             ✅ shared custom effects (animations, glass, scanner, …)
+├── assets/fonts/*.woff2    ✅ Inter / Montserrat / Material Symbols
 └── js/
-    ├── bridge.js           ← wrapper for pywebview.api with timeout + error handling
-    ├── auth_gate.js        ← runs on index.html; routes to login / premium / home
-    ├── camera.js           ← webcam preview + capture
-    ├── home.js             ← home page logic
-    ├── photo.js            ← photo page logic
-    ├── mood.js             ← mood page logic
-    ├── result.js           ← result page logic
-    ├── playback.js         ← Spotify SDK initialisation + playback control
-    ├── sidebar.js          ← saved-playlists sidebar
-    └── error_handler.js    ← maps error codes to user-facing messages
+    ├── vendor/tailwind.js  ✅ vendored Tailwind Play build
+    ├── tailwind-config.js  ✅ shared theme tokens
+    ├── ui.js               ✅ shared header-scroll behaviour
+    ├── home.js             ✅ hero zoom + manual-mood / scan navigation
+    ├── mood.js             ✅ mood-card selection → loading
+    ├── photo.js            ✅ capture → loading (webcam wiring pending)
+    ├── loading.js          ✅ auto-advance to result (inference wiring pending)
+    ├── result.js           ✅ per-emotion content + tracklist renderer
+    ├── shader.js           ✅ optional WebGL "Vibe Canvas" background (opt-in)
+    ├── bridge.js           ⬜ wrapper for pywebview.api with timeout + error handling
+    ├── auth_gate.js        ⬜ runs on index.html; routes to login / premium / home
+    ├── camera.js           ⬜ webcam preview + capture
+    ├── playback.js         ⬜ Spotify SDK initialisation + playback control
+    ├── sidebar.js          ⬜ saved-playlists sidebar (live data)
+    └── error_handler.js    ⬜ maps error codes to user-facing messages
+```
+
+Each imported page's `<head>` uses this boilerplate (paths relative to `pages/`):
+
+```html
+<link rel="stylesheet" href="../css/fonts.css">
+<link rel="stylesheet" href="../css/app.css">
+<script src="../js/vendor/tailwind.js"></script>
+<script src="../js/tailwind-config.js"></script>
 ```
 
 ---
@@ -431,15 +458,15 @@ The Premium check has already been done before any playback page is reachable, s
 
 ## Styling notes
 
-- **Colour palette** (suggested, refine in design phase):
-  - Background: dark (e.g. `#1a1a1a`) — matches music-app aesthetic.
-  - Accent: Spotify green (`#1DB954`) used sparingly for primary CTAs.
-  - Emotion-specific accent on result page: yellow for happy, blue for sad, red for angry, etc.
-- **Typography:** system font stack. No web font load — Spotify Circular is licensed, alternatives like Inter are fine but add a network dependency.
-- **Layout:** flexbox-based. CSS Grid for the home grid.
-- **Sizing:** target 1280×800 minimum. Layout should be responsive down to 1024×600 (smaller laptops).
+The realised design system is **"Vibe Canvas"** (dark, glassmorphic). Tokens live in `js/tailwind-config.js`; the canonical reference is `DESIGN.md`.
 
-The planning doc's prototypes (Figures 17–22) are low-fidelity. The high-fidelity prototype is a CP2 deliverable (Phase 2, week 2).
+- **Colour palette:** deep navy-charcoal surfaces (`background`/`surface` `#0b1326`, tiered `surface-container*` greys), soft-purple **primary** (`#ddb7ff`) for actions/active states, emerald **secondary** (`#4edea3`) for play/success. Result page applies an emotion-specific accent (happy → green, surprised → teal-green, sad → blue, neutral → amber, angry → red) — see `js/result.js`.
+- **Typography:** Montserrat for headlines, Inter for body/labels — self-hosted (latin subset) in `css/fonts.css`, no network needed. Icons via the self-hosted Material Symbols Outlined variable font.
+- **Layout:** fixed 280px sidebar + main canvas (max 1440px) + fixed 64px top app bar + fixed 96px bottom player. Flexbox throughout; CSS Grid for the mood card grid and the tracklist columns.
+- **Sizing:** target 1280×800 minimum.
+- **Elevation:** tonal layering + glassmorphism (`backdrop-blur`, 1px white/10 borders, primary-tinted soft shadows). Buttons are pill-shaped; cards/inputs use `rounded-lg` (8px), hero/scanner use `rounded-xl`+.
+
+The planning doc's prototypes (Figures 17–22) were low-fidelity; the high-fidelity prototype (this Stitch/MoodStream export) is now imported — see *High-fidelity design import* above.
 
 ---
 

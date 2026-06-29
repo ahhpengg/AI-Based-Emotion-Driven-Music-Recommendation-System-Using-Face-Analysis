@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>MoodStream - Emotional Discovery</title>
+  <link rel="stylesheet" href="../css/fonts.css">
+  <link rel="stylesheet" href="../css/app.css">
+  <script src="../js/vendor/tailwind.js"></script>
+  <script src="../js/tailwind-config.js"></script>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen selection:bg-primary-container selection:text-on-primary-container overflow-x-hidden relative">
+
+  <!-- TopAppBar -->
+  <header class="fixed top-0 right-0 w-[calc(100%-280px)] backdrop-blur-md bg-background/80 flex items-center h-16 px-8 ml-[280px] z-30 transition-colors duration-300 gap-6">
+    <div class="flex items-center gap-4">
+      <button class="text-on-surface-variant hover:text-white transition-colors">
+        <span class="material-symbols-outlined text-[24px]">chevron_left</span>
+      </button>
+      <button class="text-on-surface-variant hover:text-white transition-colors">
+        <span class="material-symbols-outlined text-[24px]">chevron_right</span>
+      </button>
+    </div>
+    <div class="flex items-center gap-4 flex-grow justify-end">
+      <button class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-white hover:bg-surface-container-highest transition-colors">
+        <span class="material-symbols-outlined filled">home</span>
+      </button>
+      <div class="relative w-full max-w-md">
+        <span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+        <input class="w-full bg-surface-container-high border-none rounded-full py-2.5 pl-12 pr-6 text-on-surface placeholder:text-on-surface-variant focus:ring-1 focus:ring-primary transition-all font-body-md" placeholder="What do you want to play?" type="text">
+      </div>
+      <div class="flex items-center gap-4 ml-2">
+        <button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-white/5 transition-colors">
+          <span class="material-symbols-outlined">notifications</span>
+        </button>
+        <div class="w-8 h-8 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant flex items-center justify-center text-on-surface-variant">
+          <span class="material-symbols-outlined text-[20px]">person</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- SideNavBar -->
+  <aside class="w-[280px] h-full fixed left-0 top-0 border-r border-white/10 backdrop-blur-xl shadow-sm bg-surface-container-low flex flex-col py-8 px-6 gap-stack-md z-30 overflow-y-auto">
+    <div class="flex items-center gap-4 mb-4">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(183,109,255,0.2)]">
+        <img src="../assets/img/logo.png" alt="MoodStream logo" class="w-full h-full object-contain">
+      </div>
+      <div>
+        <h1 class="text-headline-md font-headline-md font-bold text-primary tracking-tight">MoodStream</h1>
+        <p class="text-label-sm font-label-sm text-on-surface-variant opacity-80">Emotional Discovery</p>
+      </div>
+    </div>
+
+    <nav class="flex flex-col mt-4 flex-grow gap-[2px]">
+      <div class="flex items-center justify-between mt-6 mb-2 pl-3 pr-1">
+        <p class="text-label-sm font-label-sm text-outline-variant uppercase tracking-wider">Playlists</p>
+        <button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-white/5 hover:text-primary transition-colors">
+          <span class="material-symbols-outlined text-[20px]">add</span>
+        </button>
+      </div>
+      <div class="flex items-center justify-between px-3 py-2 mb-2 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer">
+        <span class="material-symbols-outlined text-[20px]">search</span>
+        <div class="flex items-center gap-2">
+          <span class="text-label-md font-label-md">Recents</span>
+          <span class="material-symbols-outlined text-[20px]">list</span>
+        </div>
+      </div>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#">
+        <span class="material-symbols-outlined">sentiment_satisfied</span>
+        <span class="text-label-md font-label-md">Happy Songs</span>
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#">
+        <span class="material-symbols-outlined">sentiment_very_dissatisfied</span>
+        <span class="text-label-md font-label-md">Angry</span>
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#">
+        <span class="material-symbols-outlined">sentiment_neutral</span>
+        <span class="text-label-md font-label-md">Neutral</span>
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-primary font-bold border-r-2 border-primary bg-primary/10 transition-colors scale-[0.98] duration-150" href="#">
+        <span class="material-symbols-outlined filled">mood_bad</span>
+        <span class="text-label-md font-label-md filled">Crying TT</span>
+      </a>
+    </nav>
+
+    <div class="mt-auto pt-6 pb-24">
+      <button id="scan-cta" class="w-full flex items-center justify-center gap-3 px-6 py-3 rounded-full bg-primary text-white font-bold shadow-lg hover:scale-105 hover:brightness-110 transition-all group">
+        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1, 'wght' 700; color: rgb(168, 85, 247);">photo_camera</span>
+        <span class="text-label-md font-bold" style="color: rgb(168, 85, 247);">Scan Emotion</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content Canvas -->
+  <main class="ml-[280px] pt-24 px-container-padding pb-24 max-w-[1440px] mx-auto min-h-screen flex flex-col gap-stack-lg pb-32">
+
+    <!-- Hero Section: Emotion Scanner -->
+    <section id="camera-hero-section" class="animate-fade-in-up relative w-full h-[320px] rounded-[32px] overflow-hidden flex flex-col items-center justify-start pt-16 shadow-2xl shadow-background/50 border border-white/5 bg-surface-container-low cursor-pointer group transition-all duration-500">
+      <div class="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent z-0 pointer-events-none"></div>
+      <h2 class="text-headline-xl font-headline-xl text-white drop-shadow-md z-20 text-center transition-opacity duration-300" id="hero-caption">Scan Emotion for<br>Recommended Playlist</h2>
+      <div class="absolute bottom-0 left-0 w-full h-full flex justify-center items-end z-10 pointer-events-none transition-opacity duration-300" id="local-camera-wrapper">
+        <div class="camera-mover w-full flex justify-center">
+          <img id="local-camera-img" src="../assets/img/hero-camera.png" alt="Scan emotion camera" class="camera-floater w-[500px] max-w-[85%] object-contain drop-shadow-[0_0_35px_rgba(221,183,255,0.35)] transition-all duration-700">
+        </div>
+      </div>
+    </section>
+
+    <!-- Manual Mood Selection -->
+    <section class="animate-fade-in-up delay-100 flex flex-col items-center gap-stack-sm text-center">
+      <h3 class="text-headline-md font-headline-md text-on-surface">Prefer not to show your face?</h3>
+      <p class="text-body-md font-body-md text-on-surface-variant mb-4">Choose your mood manually here</p>
+      <div class="flex flex-wrap justify-center gap-3 max-w-3xl">
+        <button class="mood-chip px-5 py-2.5 rounded-full bg-surface-container border border-outline-variant hover:border-primary hover:bg-primary/10 transition-all text-label-md font-label-md text-on-surface flex items-center gap-2 group" data-emotion="happy">
+          <span class="w-2 h-2 rounded-full bg-secondary group-hover:shadow-[0_0_10px_rgba(78,222,163,0.5)]"></span>Happy
+        </button>
+        <button class="mood-chip px-5 py-2.5 rounded-full bg-surface-container border border-outline-variant hover:border-primary hover:bg-primary/10 transition-all text-label-md font-label-md text-on-surface flex items-center gap-2 group" data-emotion="surprised">
+          <span class="w-2 h-2 rounded-full bg-secondary-fixed group-hover:shadow-[0_0_10px_rgba(111,251,190,0.5)]"></span>Surprised
+        </button>
+        <button class="mood-chip px-5 py-2.5 rounded-full bg-surface-container border border-outline-variant hover:border-primary hover:bg-primary/10 transition-all text-label-md font-label-md text-on-surface flex items-center gap-2 group" data-emotion="neutral">
+          <span class="w-2 h-2 rounded-full bg-yellow-400 group-hover:shadow-[0_0_10px_rgba(250,204,21,0.5)]"></span>Neutral
+        </button>
+        <button class="mood-chip px-5 py-2.5 rounded-full bg-surface-container border border-outline-variant hover:border-primary hover:bg-primary/10 transition-all text-label-md font-label-md text-on-surface flex items-center gap-2 group" data-emotion="sad">
+          <span class="w-2 h-2 rounded-full bg-tertiary-container group-hover:shadow-[0_0_10px_rgba(77,142,255,0.5)]"></span>Sad
+        </button>
+        <button class="mood-chip px-5 py-2.5 rounded-full bg-surface-container border border-outline-variant hover:border-primary hover:bg-primary/10 transition-all text-label-md font-label-md text-on-surface flex items-center gap-2 group" data-emotion="angry">
+          <span class="w-2 h-2 rounded-full bg-red-400 group-hover:shadow-[0_0_10px_rgba(248,113,113,0.5)]"></span>Angry
+        </button>
+        <button id="manual-mood-btn" class="px-5 py-2.5 rounded-full bg-primary text-on-primary font-bold shadow-md hover:shadow-lg transition-all text-label-md font-label-md flex items-center gap-2">
+          Your Mood <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Playlist Detail: Crying TT -->
+    <section class="animate-fade-in-up delay-200 mt-8">
+      <div class="flex items-end gap-stack-md mb-8">
+        <div class="w-[200px] h-[200px] rounded-xl shadow-2xl shadow-background/80 overflow-hidden relative group bg-gradient-to-br from-primary-container to-surface-container-high flex items-center justify-center">
+          <img src="../assets/img/cover-sad.png" alt="Crying TT cover" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='../assets/img/emoji-sad.png';this.className='w-32 h-32 object-contain';">
+          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+            <button class="w-14 h-14 rounded-full bg-secondary text-on-secondary flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
+              <span class="material-symbols-outlined filled text-[32px] ml-1">play_arrow</span>
+            </button>
+          </div>
+        </div>
+        <div class="flex flex-col gap-2 pb-2">
+          <p class="text-label-sm font-label-sm text-outline uppercase tracking-widest">Playlist</p>
+          <h1 class="text-headline-xl font-headline-xl text-on-surface tracking-tight">Crying TT</h1>
+          <p class="text-body-md font-body-md text-on-surface-variant flex items-center gap-2 mt-2">
+            <span class="material-symbols-outlined text-[18px]">favorite</span>
+            Curated for your melancholy moments • 24 songs, 1 hr 28 min
+          </p>
+          <div class="flex items-center gap-4 mt-4">
+            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">bookmark</span></button>
+            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">play_circle</span></button>
+            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">edit</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tracklist Table -->
+      <div class="w-full rounded-2xl bg-surface-container border border-white/5 overflow-hidden">
+        <div class="grid grid-cols-[48px_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)_64px] gap-4 px-6 py-4 border-b border-white/5 text-label-sm font-label-sm text-outline-variant uppercase tracking-wider sticky top-0 bg-surface-container/95 backdrop-blur-sm z-10">
+          <div class="text-center">#</div>
+          <div>Title</div>
+          <div>Artist</div>
+          <div>Album</div>
+          <div class="text-right">Time</div>
+        </div>
+        <div class="flex flex-col pb-4">
+          <!-- Track Row 1 -->
+          <div class="grid grid-cols-[48px_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)_64px] gap-4 px-6 py-3 items-center group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2 mt-1">
+            <div class="text-center text-on-surface-variant group-hover:hidden">1</div>
+            <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded bg-tertiary-container/20 flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-tertiary text-[20px]">music_note</span></div>
+              <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate">Someone Like You</p></div>
+            </div>
+            <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors">Adele</div>
+            <div class="text-body-md font-body-md text-on-surface-variant truncate">21</div>
+            <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium">4:45</div>
+          </div>
+          <!-- Track Row 2 -->
+          <div class="grid grid-cols-[48px_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)_64px] gap-4 px-6 py-3 items-center group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2">
+            <div class="text-center text-on-surface-variant group-hover:hidden">2</div>
+            <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded bg-tertiary-container/20 flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-tertiary text-[20px]">music_note</span></div>
+              <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate">Fix You</p></div>
+            </div>
+            <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors">Coldplay</div>
+            <div class="text-body-md font-body-md text-on-surface-variant truncate">X&amp;Y</div>
+            <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium">4:55</div>
+          </div>
+          <!-- Track Row 3 -->
+          <div class="grid grid-cols-[48px_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1fr)_64px] gap-4 px-6 py-3 items-center group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2">
+            <div class="text-center text-on-surface-variant group-hover:hidden">3</div>
+            <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded bg-tertiary-container/20 flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-tertiary text-[20px]">music_note</span></div>
+              <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate">Yesterday</p></div>
+            </div>
+            <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors">The Beatles</div>
+            <div class="text-body-md font-body-md text-on-surface-variant truncate">Help!</div>
+            <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium">2:05</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Persistent Bottom Music Player -->
+  <footer class="fixed bottom-0 left-0 right-0 w-full h-24 bg-surface-container/80 backdrop-blur-xl border-t border-white/10 z-50 flex items-center px-8 justify-between">
+    <div class="flex items-center gap-4 w-1/4">
+      <div class="w-14 h-14 rounded-lg overflow-hidden shadow-lg bg-surface-container-high flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-surface-variant">music_note</span>
+      </div>
+      <div class="flex flex-col">
+        <span class="text-on-surface font-bold font-headline-md text-body-md">Snowfall</span>
+        <span class="text-on-surface-variant text-label-sm">Oneheart</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-6">
+      <button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">skip_previous</span></button>
+      <button class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg hover:scale-105 transition-transform"><span class="material-symbols-outlined filled">pause</span></button>
+      <button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">skip_next</span></button>
+    </div>
+    <div class="flex items-center gap-4 flex-grow max-w-md mx-8">
+      <div class="flex gap-[2px] h-8 flex-grow items-center">
+        <div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-6 bg-primary rounded-full"></div><div class="w-1 h-3 bg-primary rounded-full"></div><div class="w-1 h-8 bg-primary rounded-full"></div><div class="w-1 h-5 bg-primary rounded-full"></div><div class="w-1 h-7 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-6 bg-primary rounded-full"></div><div class="w-1 h-3 bg-primary rounded-full"></div><div class="w-1 h-5 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-6 bg-primary rounded-full"></div><div class="w-1 h-2 bg-primary rounded-full"></div><div class="w-1 h-5 bg-white/20 rounded-full"></div><div class="w-1 h-7 bg-white/20 rounded-full"></div><div class="w-1 h-4 bg-white/20 rounded-full"></div><div class="w-1 h-6 bg-white/20 rounded-full"></div><div class="w-1 h-3 bg-white/20 rounded-full"></div><div class="w-1 h-8 bg-white/20 rounded-full"></div><div class="w-1 h-5 bg-white/20 rounded-full"></div><div class="w-1 h-7 bg-white/20 rounded-full"></div><div class="w-1 h-4 bg-white/20 rounded-full"></div><div class="w-1 h-6 bg-white/20 rounded-full"></div><div class="w-1 h-3 bg-white/20 rounded-full"></div><div class="w-1 h-5 bg-white/20 rounded-full"></div><div class="w-1 h-4 bg-white/20 rounded-full"></div><div class="w-1 h-6 bg-white/20 rounded-full"></div><div class="w-1 h-2 bg-white/20 rounded-full"></div>
+      </div>
+      <span class="text-on-surface-variant font-label-sm">03:12</span>
+    </div>
+    <div class="flex items-center gap-4 w-1/4 justify-end">
+      <button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">shuffle</span></button>
+      <button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">queue_music</span></button>
+      <button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">volume_up</span></button>
+    </div>
+  </footer>
+
+  <script src="../js/ui.js"></script>
+  <script src="../js/home.js"></script>
+</body>
+</html>

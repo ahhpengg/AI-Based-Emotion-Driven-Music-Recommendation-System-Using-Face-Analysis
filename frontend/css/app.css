@@ -1,0 +1,108 @@
+/*
+ * Shared custom styles for MoodStream.
+ *
+ * These are the hand-written (non-Tailwind) rules consolidated from the Stitch
+ * prototype <style> blocks. Class names are unique per effect, so every page can
+ * link this single sheet. See docs/FRONTEND.md.
+ */
+
+/* ------------------------------------------------------------------ *
+ * Entrance animation (home / result hero + sections)
+ * ------------------------------------------------------------------ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+
+/* ------------------------------------------------------------------ *
+ * Custom scrollbar (tracklists)
+ * ------------------------------------------------------------------ */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2d3449; border-radius: 4px; } /* surface-variant */
+::-webkit-scrollbar-thumb:hover { background: #4d4354; } /* outline-variant */
+
+/* ------------------------------------------------------------------ *
+ * Camera hero interaction (home / result)
+ * ------------------------------------------------------------------ */
+.camera-mover {
+  transform: translateY(50%);
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+#camera-hero-section:hover .camera-mover { transform: translateY(10%); }
+#camera-hero-section:hover .camera-floater {
+  animation: cameraFloat 3s ease-in-out infinite 0.6s;
+}
+@keyframes cameraFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-15px); }
+}
+
+/* ------------------------------------------------------------------ *
+ * Loading / error: pulsing text, indeterminate progress bar, glow
+ * ------------------------------------------------------------------ */
+.pulse-text { animation: pulse-opacity 2s infinite ease-in-out; }
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+.progress-bar-fill {
+  animation: progress-fill 4s infinite linear;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  background-size: 200% 100%;
+}
+@keyframes progress-fill {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.glow-effect { box-shadow: 0 0 40px -10px #ddb7ff; } /* colors.primary */
+
+/* ------------------------------------------------------------------ *
+ * Camera scan page: glassmorphism, scan line, pulse ring
+ * ------------------------------------------------------------------ */
+.glass-panel {
+  background: rgba(19, 27, 46, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.scanner-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, #ddb7ff, transparent);
+  box-shadow: 0 0 10px #ddb7ff, 0 0 20px #ddb7ff;
+  animation: scan 3s linear infinite;
+}
+@keyframes scan {
+  0%   { top: 0%;   opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.pulse-ring { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+/* ------------------------------------------------------------------ *
+ * Mood page: glassmorphic sidebar gradient
+ * ------------------------------------------------------------------ */
+.glass-gradient {
+  background: linear-gradient(180deg, rgba(221, 183, 255, 0.15) 0%, rgba(19, 27, 46, 0.8) 100%);
+  backdrop-filter: blur(20px);
+}

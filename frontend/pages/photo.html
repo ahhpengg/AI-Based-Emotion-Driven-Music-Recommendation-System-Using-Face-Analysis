@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>MoodStream - Emotion Scanner</title>
+  <link rel="stylesheet" href="../css/fonts.css">
+  <link rel="stylesheet" href="../css/app.css">
+  <script src="../js/vendor/tailwind.js"></script>
+  <script src="../js/tailwind-config.js"></script>
+</head>
+<body class="bg-background text-on-background min-h-screen font-body-md selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
+
+  <!-- SideNavBar -->
+  <aside class="w-[280px] h-full fixed left-0 top-0 border-r border-white/10 backdrop-blur-xl shadow-sm bg-surface-container-low flex flex-col py-8 px-6 gap-stack-md z-30 overflow-y-auto">
+    <div class="flex items-center gap-4 mb-4">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(183,109,255,0.2)]"><img src="../assets/img/logo.png" alt="MoodStream logo" class="w-full h-full object-contain"></div>
+      <div>
+        <h1 class="text-headline-md font-headline-md font-bold text-primary tracking-tight">MoodStream</h1>
+        <p class="text-label-sm font-label-sm text-on-surface-variant opacity-80">Emotional Discovery</p>
+      </div>
+    </div>
+    <nav class="flex flex-col mt-4 flex-grow gap-[2px]">
+      <div class="flex items-center justify-between mt-6 mb-2 pl-3 pr-1">
+        <p class="text-label-sm font-label-sm text-outline-variant uppercase tracking-wider">Playlists</p>
+        <button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-white/5 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">add</span></button>
+      </div>
+      <div class="flex items-center justify-between px-3 py-2 mb-2 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer">
+        <span class="material-symbols-outlined text-[20px]">search</span>
+        <div class="flex items-center gap-2"><span class="text-label-md font-label-md">Recents</span><span class="material-symbols-outlined text-[20px]">list</span></div>
+      </div>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#"><span class="material-symbols-outlined">sentiment_satisfied</span><span class="text-label-md font-label-md">Happy Songs</span></a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#"><span class="material-symbols-outlined">sentiment_very_dissatisfied</span><span class="text-label-md font-label-md">Angry</span></a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#"><span class="material-symbols-outlined">sentiment_neutral</span><span class="text-label-md font-label-md">Neutral</span></a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors" href="#"><span class="material-symbols-outlined">mood_bad</span><span class="text-label-md font-label-md">Crying TT</span></a>
+    </nav>
+    <div class="mt-auto pt-6 pb-24"></div>
+  </aside>
+
+  <!-- Simplified header for the transactional page -->
+  <header class="fixed top-0 flex justify-between items-center h-16 px-gutter z-40 glass-panel right-0 w-[calc(100%-280px)]">
+    <a class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors group" href="home.html">
+      <span class="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform">arrow_back</span>
+      <span class="font-label-md text-label-md">Dashboard</span>
+    </a>
+    <div class="w-10"></div>
+  </header>
+
+  <!-- Main Scanner Canvas -->
+  <main class="h-screen w-full flex flex-col items-center justify-center px-4 md:px-gutter relative ml-[280px]">
+    <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary-container rounded-full blur-[150px] opacity-10"></div>
+    </div>
+
+    <div class="w-full max-w-[800px] flex flex-col items-center z-10 relative gap-stack-md">
+      <!-- Header Info -->
+      <div class="text-center flex flex-col gap-base items-center">
+        <h1 class="text-headline-lg font-headline-lg md:text-headline-xl md:font-headline-xl text-on-surface">Taking Photo...</h1>
+        <p class="text-body-lg font-body-lg text-on-surface-variant">&nbsp;For a precise mood analysis:<br>- Position your face in the frame<br>- Remove any facial obstructions</p>
+      </div>
+
+      <!-- Camera Viewfinder -->
+      <div class="relative w-full aspect-[4/3] md:aspect-video rounded-xl overflow-hidden glass-panel shadow-[0_0_40px_rgba(183,109,255,0.15)] group">
+        <!-- Placeholder feed (replaced by the live <video> when the camera is wired) -->
+        <div class="absolute inset-0 bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
+          <span class="material-symbols-outlined text-on-surface-variant/40" style="font-size: 120px;">face</span>
+        </div>
+        <video id="webcam-preview" class="absolute inset-0 w-full h-full object-cover hidden" autoplay muted playsinline></video>
+
+        <!-- Viewfinder Corner Markers -->
+        <div class="absolute inset-container-padding pointer-events-none">
+          <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary/50 rounded-tl-lg"></div>
+          <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary/50 rounded-tr-lg"></div>
+          <div class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary/50 rounded-bl-lg"></div>
+          <div class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary/50 rounded-br-lg"></div>
+        </div>
+
+        <!-- Scanning Animation Line -->
+        <div class="scanner-line"></div>
+
+        <!-- Detection Overlay (Simulated) -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div class="w-48 h-64 border border-primary/30 rounded-[100px] flex items-center justify-center">
+            <div class="w-full h-full border border-primary/20 rounded-[100px] scale-90"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="flex flex-col items-center gap-stack-md w-full max-w-[400px] mt-4">
+        <button id="capture-btn" class="w-full py-4 bg-primary hover:bg-primary-fixed text-on-primary rounded-full text-body-lg font-body-lg font-semibold transition-all duration-300 shadow-[0_0_20px_rgba(221,183,255,0.3)] hover:shadow-[0_0_30px_rgba(221,183,255,0.5)] hover:-translate-y-1 active:translate-y-0 flex justify-center items-center gap-2">
+          <span class="material-symbols-outlined">photo_camera</span>Capture
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script src="../js/photo.js"></script>
+</body>
+</html>
