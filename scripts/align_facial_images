@@ -1,0 +1,142 @@
+"""
+Face-alignment preprocessing for AffectNet datasets.
+
+Pipeline per image (target look: RAF-DB "aligned" crops, e.g. test_0084_aligned.jpg):
+  1. Convert the image to grayscale.
+  2. Locate the face with MediaPipe FaceMesh and rotate the image so the eyes are
+     horizontal (same alignment step RAF-DB applies).
+  3. Crop a SQUARE tightly around the face-oval landmarks (chin -> forehead) plus a
+     small margin, so the face fills the frame and shoulders/background are cut.
+  4. Resize to 300x300 (EfficientNet-B3 input). The crop is already square, so the
+     face is never warped.
+
+If FaceMesh finds no face, fall back to padding the whole image to a square and
+report it, so no sample silently disappears with a bad crop.
+
+The FaceMesh detector is created ONCE and reused across the dataset (much faster
+than per-image construction).
+"""
+
+import os
+from itertools import chain
+
+import cv2
+import mediapipe as mp
+import numpy as np
+from PIL import Image, ImageOps
+
+# ============================================================
+#  EDIT THESE, THEN JUST RUN THE FILE
+# ============================================================
+input_folder = "C:/Users/Acer/Documents/AffectNet/val/3"
+output_folder = "C:/Users/Acer/Documents/AffectNet/val/processed_3"
+
+OUT_SIZE = 300          # final square size (EfficientNet-B3 native input)
+PAD_WHITE = 255          # white color for rotation borders and crop padding
+FACE_MARGIN = 0.01      # extra margin around the face-oval box (fraction of box size)
+# ============================================================
+
+os.makedirs(output_folder, exist_ok=True)
+
+# One FaceMesh detector, reused for every image.
+face_mesh = mp.solutions.face_mesh.FaceMesh(
+    static_image_mode=True,
+    max_num_faces=1,
+    refine_landmarks=False,
+    min_detection_confidence=0.5,
+)
+
+# Landmark ids tracing the outline of the face (chin to forehead).
+FACE_OVAL_IDS = sorted(set(chain(*mp.solutions.face_mesh.FACEMESH_FACE_OVAL)))
+LEFT_EYE_IDS = [33, 133]    # eye-corner landmarks; eye centre = mean of the corners
+RIGHT_EYE_IDS = [362, 263]
+
+
+def face_landmarks_px(rgb):
+    """Return the FaceMesh landmarks as an (N, 2) pixel-coordinate array, or None."""
+    result = face_mesh.process(rgb)
+    if not result.multi_face_landmarks:
+        return None
+    h, w = rgb.shape[:2]
+    points = result.multi_face_landmarks[0].landmark
+    return np.array([[p.x * w, p.y * h] for p in points], dtype=np.float32)
+
+
+def crop_square(gray, cx, cy, side):
+    """Crop a side x side square centred on (cx, cy), padding out-of-bounds with gray."""
+    size = int(round(side))
+    x0 = int(round(cx - side / 2))
+    y0 = int(round(cy - side / 2))
+    canvas = np.full((size, size), PAD_WHITE, dtype=np.uint8)
+
+    h, w = gray.shape
+    sx0, sy0 = max(x0, 0), max(y0, 0)
+    sx1, sy1 = min(x0 + size, w), min(y0 + size, h)
+    if sx1 > sx0 and sy1 > sy0:
+        canvas[sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = gray[sy0:sy1, sx0:sx1]
+    return canvas
+
+
+def process(input_path):
+    """Return (300x300 grayscale PIL image, status string)."""
+    img = Image.open(input_path).convert("RGB")
+    rgb = np.asarray(img)
+
+    # 1. Grayscale the image.
+    gray = np.asarray(img.convert("L"))  # H x W
+
+    # 2. Face landmarks (detected on the colour image).
+    points = face_landmarks_px(rgb)
+    if points is None:
+        # Fallback: keep the whole image, padded to a square.
+        padded = ImageOps.pad(Image.fromarray(gray, mode="L"), (OUT_SIZE, OUT_SIZE),
+                              color=PAD_WHITE, centering=(0.5, 0.5))
+        return padded, "no_face_fallback"
+
+    # 3. Align: rotate around the eye midpoint so the eye line is horizontal.
+    left_eye = points[LEFT_EYE_IDS].mean(axis=0)
+    right_eye = points[RIGHT_EYE_IDS].mean(axis=0)
+    if left_eye[0] > right_eye[0]:
+        left_eye, right_eye = right_eye, left_eye
+    angle = np.degrees(np.arctan2(right_eye[1] - left_eye[1],
+                                  right_eye[0] - left_eye[0]))
+    eyes_center = tuple(((left_eye + right_eye) / 2).astype(float))
+
+    rot = cv2.getRotationMatrix2D(eyes_center, angle, 1.0)
+    h, w = gray.shape
+    gray = cv2.warpAffine(gray, rot, (w, h), flags=cv2.INTER_CUBIC,
+                          borderValue=PAD_WHITE)
+
+    # 4. Square crop around the rotated face oval + margin, then resize.
+    oval = points[FACE_OVAL_IDS]
+    oval = np.hstack([oval, np.ones((len(oval), 1), dtype=np.float32)]) @ rot.T
+    x0, y0 = oval.min(axis=0)
+    x1, y1 = oval.max(axis=0)
+    side = max(x1 - x0, y1 - y0) * (1 + FACE_MARGIN)
+    face = crop_square(gray, (x0 + x1) / 2, (y0 + y1) / 2, side)
+
+    resized = Image.fromarray(face, mode="L").resize((OUT_SIZE, OUT_SIZE),
+                                                     Image.LANCZOS)
+    return resized, "ok"
+
+
+def main():
+    processed = fallback = 0
+    for file in os.listdir(input_folder):
+        if not file.lower().endswith((".png", ".jpg", ".jpeg")):
+            continue
+
+        result, status = process(os.path.join(input_folder, file))
+        if status == "no_face_fallback":
+            fallback += 1
+            print(f"no face found, kept whole image: {file}")
+
+        result.save(os.path.join(output_folder, file))
+        processed += 1
+
+    print(f"Done! Processed {processed} images "
+          f"({fallback} without a detected face).")
+
+
+if __name__ == "__main__":
+    main()
