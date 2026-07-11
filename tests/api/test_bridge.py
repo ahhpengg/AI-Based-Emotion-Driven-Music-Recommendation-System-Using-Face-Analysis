@@ -376,11 +376,18 @@ def test_window_resize_requires_begin(api, rects):
 # --- open_external_url -------------------------------------------------------
 
 
-def test_open_external_url_opens_allowlisted_url(monkeypatch, api):
+@pytest.mark.parametrize(
+    "good_url",
+    [
+        "https://www.spotify.com/premium/",  # Premium upgrade page
+        "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC",  # Free deep link
+    ],
+)
+def test_open_external_url_opens_allowlisted_url(monkeypatch, api, good_url):
     opened = []
     monkeypatch.setattr(bridge_module.webbrowser, "open", lambda url: opened.append(url) or True)
-    assert api.open_external_url("https://www.spotify.com/premium/") is True
-    assert opened == ["https://www.spotify.com/premium/"]
+    assert api.open_external_url(good_url) is True
+    assert opened == [good_url]
 
 
 @pytest.mark.parametrize(

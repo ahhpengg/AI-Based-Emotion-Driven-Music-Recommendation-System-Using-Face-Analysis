@@ -45,7 +45,14 @@ _fer_lock = threading.Lock()
 
 # URLs the frontend may open in the system browser. Kept deliberately tight so
 # the bridge never becomes a generic "open anything" primitive for page content.
-_ALLOWED_EXTERNAL_URL_PREFIXES = ("https://www.spotify.com/",)
+#   - www.spotify.com  -> the Premium upgrade page (premium_required.html).
+#   - open.spotify.com -> per-track deep links for Free accounts, which cannot
+#     use the in-app Web Playback SDK; result.js opens the song in Spotify
+#     (external browser / desktop app) instead of playing it in the webview.
+_ALLOWED_EXTERNAL_URL_PREFIXES = (
+    "https://www.spotify.com/",
+    "https://open.spotify.com/",
+)
 
 # The window's minimum size (also passed to create_window in src/main.py).
 # Enforced here too because the custom resize drag bypasses the native limit.

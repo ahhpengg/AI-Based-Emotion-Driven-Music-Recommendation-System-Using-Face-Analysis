@@ -6,7 +6,42 @@
  * colour, mood image and the sample tracklist below are placeholders that mirror
  * the Stitch prototypes. When the backend exists, replace EMOTIONS[...].tracks
  * with the playlist returned by generate_playlist (see docs/FRONTEND.md).
+ *
+ * Free (non-Premium) accounts can't use the in-app Web Playback SDK, so this
+ * page degrades gracefully for them: the play-whole-playlist controls are
+ * removed and each track opens in Spotify (external browser / desktop app) via
+ * open_external_url instead of playing in-app. Tier comes from the profile the
+ * auth gate / premium page stashed in sessionStorage.spotify_profile.
  */
+import { callPy } from "./bridge.js";
+
+// True when the signed-in Spotify account is Free. Absent profile (a page opened
+// directly in dev) is treated as Premium so the default UI is unchanged.
+function isFreeUser() {
+  try {
+    const p = JSON.parse(sessionStorage.getItem("spotify_profile") || "null");
+    return p ? p.premium === false : false;
+  } catch {
+    return false;
+  }
+}
+
+// Deep link to a song in Spotify. Real generate_playlist rows carry a track_id
+// (-> /track/<id>); the placeholder tracklist below has none, so fall back to a
+// search link, which still resolves to the song in Spotify.
+function spotifyUrl(title, artist, trackId) {
+  if (trackId) return `https://open.spotify.com/track/${encodeURIComponent(trackId)}`;
+  return `https://open.spotify.com/search/${encodeURIComponent(`${title} ${artist}`)}`;
+}
+
+async function openInSpotify(title, artist, trackId) {
+  try {
+    await callPy("open_external_url", spotifyUrl(title, artist, trackId));
+  } catch (err) {
+    console.error("Couldn't open the track in Spotify:", err);
+  }
+}
+
 const EMOTIONS = {
   happy: {
     accent: "#6ffbbe",
@@ -87,14 +122,19 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function trackRow(index, [title, artist, album, time], accent) {
+function trackRow(index, [title, artist, album, time], accent, isFree) {
   const el = document.createElement("div");
   el.className =
     "track-grid px-4 md:px-6 py-3 group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2" +
     (index === 1 ? " mt-1" : "");
+  // Hover affordance: Premium plays in-app (play_arrow); Free opens the song in
+  // Spotify (open_in_new). Playback itself is still placeholder for Premium.
+  const hoverIcon = isFree
+    ? `<span class="material-symbols-outlined text-[18px]">open_in_new</span>`
+    : `<span class="material-symbols-outlined filled text-[20px]">play_arrow</span>`;
   el.innerHTML = `
     <div class="text-center text-on-surface-variant group-hover:hidden">${index}</div>
-    <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
+    <div class="text-center text-primary hidden group-hover:flex items-center justify-center">${hoverIcon}</div>
     <div class="flex items-center gap-3 min-w-0">
       <div class="w-10 h-10 rounded flex items-center justify-center shadow-sm shrink-0" style="background-color: ${hexToRgba(accent, 0.2)};"><span class="material-symbols-outlined text-[20px]" style="color: ${accent};">music_note</span></div>
       <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate"></p></div>
@@ -107,12 +147,18 @@ function trackRow(index, [title, artist, album, time], accent) {
   el.children[3].textContent = artist;
   el.children[4].textContent = album;
   el.children[5].textContent = time;
+  if (isFree) {
+    // Real rows will pass track_id here as a 3rd arg once generate_playlist is wired.
+    el.title = "Open in Spotify";
+    el.addEventListener("click", () => openInSpotify(title, artist));
+  }
   return el;
 }
 
 window.addEventListener("load", () => {
   const key = (sessionStorage.getItem("last_emotion") || "happy").toLowerCase();
   const e = EMOTIONS[key] || EMOTIONS.happy;
+  const free = isFreeUser();
 
   // Banner
   const banner = document.getElementById("result-banner");
@@ -144,10 +190,23 @@ window.addEventListener("load", () => {
   document.getElementById("playlist-title").textContent = e.title;
   document.getElementById("playlist-meta").textContent = e.meta;
 
+  // Free mode: no in-app playback, so drop the play-whole-playlist affordances
+  // (opening 24 external tabs makes no sense) and surface the "opens in Spotify"
+  // hint. Per-track opening is handled inside trackRow.
+  if (free) {
+    document.getElementById("cover-play-overlay")?.remove();
+    document.getElementById("playlist-play-btn")?.remove();
+    const hint = document.getElementById("free-playback-hint");
+    if (hint) {
+      hint.classList.remove("hidden");
+      hint.classList.add("flex");
+    }
+  }
+
   // Tracklist
   const list = document.getElementById("tracklist");
   list.innerHTML = "";
-  e.tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, t, e.accent)));
+  e.tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, t, e.accent, free)));
 
   document.title = `MoodStream - ${e.title}`;
 });

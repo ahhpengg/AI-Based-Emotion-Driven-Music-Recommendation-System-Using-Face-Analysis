@@ -33,7 +33,9 @@
       <div class="flex flex-col sm:flex-row sm:items-end gap-stack-md mb-8">
         <div id="playlist-cover" class="w-[180px] h-[180px] md:w-[200px] md:h-[200px] rounded-xl shadow-2xl shadow-background/80 overflow-hidden relative group flex items-center justify-center shrink-0" style="background-image: linear-gradient(135deg, #6ffbbe, #222a3d);">
           <img id="cover-icon" src="../assets/img/cover-happy.png" alt="" class="w-full h-full object-cover">
-          <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+          <!-- Play-whole-playlist affordance: Premium only. result.js removes it
+               for Free accounts (opening 24 external tabs makes no sense). -->
+          <div id="cover-play-overlay" class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
             <button class="w-14 h-14 rounded-full bg-secondary text-on-secondary flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
               <span class="material-symbols-outlined filled text-[32px] ml-1">play_arrow</span>
             </button>
@@ -46,9 +48,14 @@
             <span class="material-symbols-outlined text-[18px]">favorite</span>
             <span id="playlist-meta">Curated for your joyful moments • 24 songs, 1 hr 15 min</span>
           </p>
+          <!-- Shown by result.js only in Free mode (see isFreeUser). -->
+          <p id="free-playback-hint" class="hidden text-label-sm font-label-sm text-on-surface-variant items-center gap-1.5 mt-1">
+            <span class="material-symbols-outlined text-[16px]">open_in_new</span>
+            <span>Playback needs Premium — open any song in Spotify.</span>
+          </p>
           <div class="flex items-center gap-4 mt-4">
             <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">bookmark</span></button>
-            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">play_circle</span></button>
+            <button id="playlist-play-btn" class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">play_circle</span></button>
             <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">edit</span></button>
           </div>
         </div>
@@ -70,6 +77,6 @@
 
   <script src="../js/chrome.js"></script>
   <script src="../js/titlebar.js"></script>
-  <script src="../js/result.js"></script>
+  <script type="module" src="../js/result.js"></script>
 </body>
 </html>

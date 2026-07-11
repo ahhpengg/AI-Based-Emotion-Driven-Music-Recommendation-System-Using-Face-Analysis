@@ -31,16 +31,17 @@
       </div>
 
       <div>
-        <h1 class="text-headline-md font-headline-md font-bold text-white tracking-tight whitespace-nowrap">Spotify Premium required</h1>
-        <p class="text-body-md font-body-md text-on-surface-variant text-justify [text-align-last:center] mt-2">EchoSoul streams music through Spotify's Web Playback SDK, which Spotify only enables for <span class="text-on-surface font-bold">Premium</span> subscribers. Your account doesn't have Premium yet, so playback would stay silent.</p>
+        <h1 class="text-headline-md font-headline-md font-bold text-white tracking-tight whitespace-nowrap">Spotify Premium required for playback</h1>
+        <p class="text-body-md font-body-md text-on-surface-variant text-justify [text-align-last:center] mt-2">EchoSoul streams music through Spotify's Web Playback SDK, which Spotify only enables for <span class="text-on-surface font-bold">Premium</span> subscribers. Your account doesn't have Premium yet, so songs can't play inside the app — but you can still detect your mood and build playlists, then open each track in Spotify.</p>
       </div>
 
       <p id="account-line" class="text-label-sm font-label-sm text-on-surface-variant" role="status"></p>
 
       <div class="w-full flex flex-col items-center gap-3">
         <button id="upgrade-btn" class="w-full max-w-xs px-8 py-3.5 rounded-full bg-[#1DB954] text-[#062012] font-label-md font-bold shadow-lg hover:scale-105 hover:brightness-110 transition-all">Get Spotify Premium</button>
-        <button id="recheck-btn" class="w-full max-w-xs px-8 py-3 rounded-full bg-white text-background font-label-md font-bold hover:scale-105 transition-transform">I've upgraded — check again</button>
-        <button id="switch-btn" class="text-label-md font-label-md text-on-surface-variant hover:text-primary underline underline-offset-4 transition-colors mt-1">Use a different account</button>
+        <button id="continue-btn" class="w-full max-w-xs px-8 py-3 rounded-full bg-white text-background font-label-md font-bold hover:scale-105 transition-transform">Continue without playback</button>
+        <button id="recheck-btn" class="text-label-md font-label-md text-on-surface-variant hover:text-primary underline underline-offset-4 transition-colors mt-1">I've upgraded — check again</button>
+        <button id="switch-btn" class="text-label-md font-label-md text-on-surface-variant hover:text-primary underline underline-offset-4 transition-colors">Use a different account</button>
       </div>
 
       <p id="premium-status" class="text-label-sm font-label-sm text-error min-h-[1rem]" role="alert"></p>

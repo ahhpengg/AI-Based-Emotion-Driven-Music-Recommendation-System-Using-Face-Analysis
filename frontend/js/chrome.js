@@ -35,6 +35,20 @@
   const page = document.body.dataset.page || "home";
   const cfg = PAGE_CONFIG[page] || PAGE_CONFIG.home;
 
+  // Free (non-Premium) accounts can't use the in-app Web Playback SDK, so the
+  // bottom "now playing" player is meaningless for them — suppress it. The tier
+  // comes from the profile the auth gate / premium page stashed. Absent profile
+  // (e.g. a page opened directly in dev) is treated as Premium: no regression.
+  function isFreeUser() {
+    try {
+      const p = JSON.parse(sessionStorage.getItem("spotify_profile") || "null");
+      return p ? p.premium === false : false;
+    } catch {
+      return false;
+    }
+  }
+  const showFooter = cfg.footer && !isFreeUser();
+
   // ---- Sidebar -------------------------------------------------------------
   // The playlist links are placeholders (data-placeholder => no-op for now).
   function sidebarHTML() {
@@ -161,7 +175,7 @@
   // and below the open drawer (z-40) on mobile.
   const headerHTML = cfg.header === "back" ? headerBackHTML() : headerFullHTML();
   let markup = sidebarHTML() + headerHTML;
-  if (cfg.footer) markup += footerHTML();
+  if (showFooter) markup += footerHTML();
   markup += backdropHTML();
 
   const holder = document.createElement("div");
