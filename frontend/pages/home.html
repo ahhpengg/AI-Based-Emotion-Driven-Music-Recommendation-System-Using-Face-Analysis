@@ -53,36 +53,37 @@
       </div>
     </section>
 
-    <!-- Playlist Detail: Crying TT
-         PLACEHOLDER — static "recently played" showcase from the Stitch
-         prototype. Replaced by real recently-played data once the backend and
-         sidebar.js / playback wiring exist (see docs/FRONTEND.md). -->
-    <section class="animate-fade-in-up delay-200 mt-8">
+    <!-- Latest saved playlist showcase — hidden until home.js fills it from
+         list_user_playlists / load_playlist; stays hidden when nothing has
+         been saved yet. Cover, title and the button all open the full playlist
+         view (result.html#playlist=<id>). -->
+    <section id="recent-playlist-section" class="animate-fade-in-up delay-200 mt-8 hidden">
       <div class="flex flex-col sm:flex-row sm:items-end gap-stack-md mb-8">
-        <div class="w-[180px] h-[180px] md:w-[200px] md:h-[200px] rounded-xl shadow-2xl shadow-background/80 overflow-hidden relative group bg-gradient-to-br from-primary-container to-surface-container-high flex items-center justify-center shrink-0">
-          <img src="../assets/img/cover-sad.png" alt="Crying TT cover" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='../assets/img/emoji-sad.png';this.className='w-32 h-32 object-contain';">
+        <div data-open-playlist class="w-[180px] h-[180px] md:w-[200px] md:h-[200px] rounded-xl shadow-2xl shadow-background/80 overflow-hidden relative group bg-gradient-to-br from-primary-container to-surface-container-high flex items-center justify-center shrink-0 cursor-pointer">
+          <span id="recent-cover-fallback" class="material-symbols-outlined text-[96px] text-on-surface/70">music_note</span>
+          <img id="recent-cover" alt="Playlist cover" class="w-full h-full object-cover hidden">
           <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-            <button class="w-14 h-14 rounded-full bg-secondary text-on-secondary flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
-              <span class="material-symbols-outlined filled text-[32px] ml-1">play_arrow</span>
-            </button>
+            <span class="w-14 h-14 rounded-full bg-secondary text-on-secondary flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
+              <span class="material-symbols-outlined text-[28px]">arrow_forward</span>
+            </span>
           </div>
         </div>
         <div class="flex flex-col gap-2 pb-2 min-w-0">
-          <p class="text-label-sm font-label-sm text-outline uppercase tracking-widest">Playlist</p>
-          <h1 class="text-headline-lg font-headline-lg md:text-headline-xl md:font-headline-xl text-on-surface tracking-tight">Crying TT</h1>
+          <p class="text-label-sm font-label-sm text-outline uppercase tracking-widest">Your latest playlist</p>
+          <h1 id="recent-title" data-open-playlist class="text-headline-lg font-headline-lg md:text-headline-xl md:font-headline-xl text-on-surface tracking-tight cursor-pointer hover:text-primary transition-colors"></h1>
           <p class="text-body-md font-body-md text-on-surface-variant flex items-center gap-2 mt-2">
             <span class="material-symbols-outlined text-[18px]">favorite</span>
-            Curated for your melancholy moments • 24 songs, 1 hr 28 min
+            <span id="recent-meta"></span>
           </p>
           <div class="flex items-center gap-4 mt-4">
-            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">bookmark</span></button>
-            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">play_circle</span></button>
-            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">edit</span></button>
+            <button data-open-playlist class="px-5 py-2.5 rounded-full bg-primary text-on-primary font-bold shadow-md hover:shadow-lg transition-all text-label-md font-label-md flex items-center gap-2">
+              Open playlist <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- Tracklist Table -->
+      <!-- Tracklist preview (first few songs; home.js appends a "view all" row) -->
       <div class="w-full rounded-2xl bg-surface-container border border-white/5 overflow-hidden">
         <div class="track-grid px-4 md:px-6 py-4 border-b border-white/5 text-label-sm font-label-sm text-outline-variant uppercase tracking-wider sticky top-0 bg-surface-container/95 backdrop-blur-sm z-10">
           <div class="text-center">#</div>
@@ -91,50 +92,14 @@
           <div class="track-col-album">Album</div>
           <div class="text-right">Time</div>
         </div>
-        <div class="flex flex-col pb-4">
-          <!-- Track Row 1 -->
-          <div class="track-grid px-4 md:px-6 py-3 group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2 mt-1">
-            <div class="text-center text-on-surface-variant group-hover:hidden">1</div>
-            <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-10 h-10 rounded bg-tertiary-container/20 flex items-center justify-center shadow-sm shrink-0"><span class="material-symbols-outlined text-tertiary text-[20px]">music_note</span></div>
-              <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate">Someone Like You</p></div>
-            </div>
-            <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors">Adele</div>
-            <div class="track-col-album text-body-md font-body-md text-on-surface-variant truncate">21</div>
-            <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium">4:45</div>
-          </div>
-          <!-- Track Row 2 -->
-          <div class="track-grid px-4 md:px-6 py-3 group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2">
-            <div class="text-center text-on-surface-variant group-hover:hidden">2</div>
-            <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-10 h-10 rounded bg-tertiary-container/20 flex items-center justify-center shadow-sm shrink-0"><span class="material-symbols-outlined text-tertiary text-[20px]">music_note</span></div>
-              <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate">Fix You</p></div>
-            </div>
-            <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors">Coldplay</div>
-            <div class="track-col-album text-body-md font-body-md text-on-surface-variant truncate">X&amp;Y</div>
-            <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium">4:55</div>
-          </div>
-          <!-- Track Row 3 -->
-          <div class="track-grid px-4 md:px-6 py-3 group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2">
-            <div class="text-center text-on-surface-variant group-hover:hidden">3</div>
-            <div class="text-center text-primary hidden group-hover:flex items-center justify-center"><span class="material-symbols-outlined filled text-[20px]">play_arrow</span></div>
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-10 h-10 rounded bg-tertiary-container/20 flex items-center justify-center shadow-sm shrink-0"><span class="material-symbols-outlined text-tertiary text-[20px]">music_note</span></div>
-              <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate">Yesterday</p></div>
-            </div>
-            <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors">The Beatles</div>
-            <div class="track-col-album text-body-md font-body-md text-on-surface-variant truncate">Help!</div>
-            <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium">2:05</div>
-          </div>
-        </div>
+        <div id="recent-tracklist" class="flex flex-col pb-4"></div>
       </div>
     </section>
   </main>
 
   <script src="../js/chrome.js"></script>
   <script src="../js/titlebar.js"></script>
-  <script src="../js/home.js"></script>
+  <script type="module" src="../js/sidebar.js"></script>
+  <script type="module" src="../js/home.js"></script>
 </body>
 </html>

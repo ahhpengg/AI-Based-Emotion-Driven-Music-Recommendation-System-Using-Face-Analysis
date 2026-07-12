@@ -15,10 +15,11 @@
  *   - <  lg: sidebar becomes an off-canvas drawer toggled by the header's
  *     hamburger, dimmed by a backdrop; content goes full width.
  *
- * PLACEHOLDER DATA: the sidebar playlist list, the search box and the bottom
- * player's "now playing" track are static demo content. They stay until the
- * Python bridge exists (sidebar.js -> list_user_playlists, playback.js -> SDK),
- * then get replaced with live data. See docs/FRONTEND.md.
+ * PLACEHOLDER DATA: the search box and the bottom player's "now playing" track
+ * are static demo content until playback.js (Spotify SDK) exists. The sidebar
+ * playlist list is LIVE: this script renders the empty #sidebar-playlists
+ * container and js/sidebar.js (a module loaded after this script) fills it
+ * from the Python bridge (list_user_playlists). See docs/FRONTEND.md.
  */
 (function () {
   "use strict";
@@ -50,7 +51,8 @@
   const showFooter = cfg.footer && !isFreeUser();
 
   // ---- Sidebar -------------------------------------------------------------
-  // The playlist links are placeholders (data-placeholder => no-op for now).
+  // The playlist list itself is filled by js/sidebar.js (live bridge data);
+  // the "new playlist" and search/Recents controls are still placeholders.
   function sidebarHTML() {
     const scanBlock = cfg.scan
       ? `<div class="mt-auto pt-6 pb-28">
@@ -85,10 +87,9 @@
           <span class="material-symbols-outlined text-[20px]">search</span>
           <div class="flex items-center gap-2"><span class="text-label-md font-label-md">Recents</span><span class="material-symbols-outlined text-[20px]">list</span></div>
         </div>
-        <a data-placeholder class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors cursor-pointer"><span class="material-symbols-outlined">sentiment_satisfied</span><span class="text-label-md font-label-md">Happy Songs</span></a>
-        <a data-placeholder class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors cursor-pointer"><span class="material-symbols-outlined">sentiment_very_dissatisfied</span><span class="text-label-md font-label-md">Angry</span></a>
-        <a data-placeholder class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant font-label-md hover:bg-white/5 transition-colors cursor-pointer"><span class="material-symbols-outlined">sentiment_neutral</span><span class="text-label-md font-label-md">Neutral</span></a>
-        <a data-placeholder class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-primary font-bold border-r-2 border-primary bg-primary/10 transition-colors cursor-pointer"><span class="material-symbols-outlined filled">mood_bad</span><span class="text-label-md font-label-md">Crying TT</span></a>
+        <div id="sidebar-playlists" class="flex flex-col gap-[2px]">
+          <p class="px-3 py-2 text-label-sm font-label-sm text-on-surface-variant opacity-60">Loading playlists…</p>
+        </div>
       </nav>
 
       ${scanBlock}
@@ -111,8 +112,19 @@
           <input data-placeholder class="w-full bg-surface-container-high border-none rounded-full py-2.5 pl-12 pr-6 text-on-surface placeholder:text-on-surface-variant focus:ring-1 focus:ring-primary transition-all font-body-md" placeholder="What do you want to play?" type="text">
         </div>
         <div class="flex items-center gap-2 md:gap-4 md:ml-2 shrink-0">
-          <button data-placeholder aria-label="Notifications" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-white/5 transition-colors"><span class="material-symbols-outlined">notifications</span></button>
-          <div class="w-8 h-8 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant flex items-center justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">person</span></div>
+          <div class="relative shrink-0">
+            <button id="profile-chip" aria-label="Account" class="w-8 h-8 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant flex items-center justify-center text-on-surface-variant hover:border-primary transition-colors"><span class="material-symbols-outlined text-[20px]">person</span></button>
+            <div id="profile-menu" class="hidden absolute right-0 top-11 w-64 rounded-xl bg-surface-container-high border border-white/10 shadow-xl py-2 z-50">
+              <div class="px-4 py-2 border-b border-white/10">
+                <p id="profile-menu-name" class="text-body-md font-body-md text-on-surface font-bold truncate">Spotify account</p>
+                <p id="profile-menu-email" class="text-label-sm font-label-sm text-on-surface-variant truncate"></p>
+                <span id="profile-menu-plan" class="hidden mt-1.5 px-2 py-0.5 rounded-full text-label-sm font-label-sm bg-primary/15 text-primary"></span>
+              </div>
+              <button id="profile-logout" class="w-full flex items-center gap-2 px-4 py-2.5 text-label-md font-label-md text-on-surface hover:bg-white/5 text-left transition-colors">
+                <span class="material-symbols-outlined text-[20px]">logout</span>Log out
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </header>`;
@@ -226,6 +238,62 @@
   window.addEventListener("resize", () => {
     if (window.innerWidth >= 1024) closeSidebar();
   });
+
+  // ---- Profile chip + account dropdown -------------------------------------
+  // The auth gate (Premium) / premium page (Free mode) stashed the Spotify
+  // profile in sessionStorage; show its initial in the header circle and a
+  // dropdown with the account details + logout. Absent profile (page opened
+  // directly in dev) keeps the generic person icon; the dropdown still works.
+  (function initProfileChip() {
+    const chip = document.getElementById("profile-chip");
+    const menu = document.getElementById("profile-menu");
+    if (!chip || !menu) return; // photo page uses the "back" header (no chip)
+
+    let profile = null;
+    try {
+      profile = JSON.parse(sessionStorage.getItem("spotify_profile") || "null");
+    } catch {
+      /* malformed stash: treat as absent */
+    }
+
+    if (profile && profile.display_name) {
+      chip.textContent = profile.display_name.trim().charAt(0).toUpperCase();
+      chip.classList.add("text-label-md", "font-bold", "text-primary");
+      chip.title = profile.display_name;
+      document.getElementById("profile-menu-name").textContent = profile.display_name;
+    }
+    if (profile && profile.email) {
+      document.getElementById("profile-menu-email").textContent = profile.email;
+    }
+    if (profile) {
+      const plan = document.getElementById("profile-menu-plan");
+      plan.textContent = profile.premium ? "Premium account" : "Free account";
+      plan.classList.remove("hidden");
+      plan.classList.add("inline-block");
+    }
+
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation(); // keep the document click handler from closing it
+      menu.classList.toggle("hidden");
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#profile-menu")) menu.classList.add("hidden");
+    });
+
+    document.getElementById("profile-logout").addEventListener("click", async () => {
+      // Plain script (no module imports): call the bridge API directly — the
+      // bridge is long ready by the time a user can click the header.
+      try {
+        await window.pywebview.api.logout();
+      } catch (err) {
+        console.error("logout failed:", err);
+      }
+      // Navigate to login regardless: even if the token delete failed, the
+      // login page is safe and a fresh login overwrites the cache anyway.
+      sessionStorage.removeItem("spotify_profile");
+      window.location.replace("login.html");
+    });
+  })();
 
   // ---- Header elevation on scroll (was ui.js) -----------------------------
   window.addEventListener("scroll", () => {

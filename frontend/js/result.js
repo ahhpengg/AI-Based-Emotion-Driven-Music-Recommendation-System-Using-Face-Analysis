@@ -1,11 +1,13 @@
 /*
- * Result page.
+ * Result page — two modes (docs/FRONTEND.md):
  *
- * One template, five emotions. The chosen emotion comes from
- * sessionStorage.last_emotion (set by mood.js / loading.js); the copy, accent
- * colour, mood image and the sample tracklist below are placeholders that mirror
- * the Stitch prototypes. When the backend exists, replace EMOTIONS[...].tracks
- * with the playlist returned by generate_playlist (see docs/FRONTEND.md).
+ * 1. Saved playlist (result.html#playlist=<id>): loads the playlist from the
+ *    Python bridge (load_playlist) and renders its real tracks. The mood
+ *    banner is dropped — a saved playlist isn't a fresh detection. This is
+ *    where sidebar / home-showcase clicks land.
+ * 2. Detection flow (no hash): themed placeholder content per
+ *    sessionStorage.last_emotion (set by mood.js / loading.js), mirroring the
+ *    Stitch prototypes. Replaced by the real generate_playlist wiring in F6.
  *
  * Free (non-Premium) accounts can't use the in-app Web Playback SDK, so this
  * page degrades gracefully for them: the play-whole-playlist controls are
@@ -14,39 +16,20 @@
  * auth gate / premium page stashed in sessionStorage.spotify_profile.
  */
 import { callPy } from "./bridge.js";
+import {
+  DEFAULT_ACCENT,
+  EMOTION_THEMES,
+  dbTrack,
+  formatPlaylistMeta,
+  hexToRgba,
+  isFreeUser,
+  trackRow,
+} from "./playlists_ui.js";
 
-// True when the signed-in Spotify account is Free. Absent profile (a page opened
-// directly in dev) is treated as Premium so the default UI is unchanged.
-function isFreeUser() {
-  try {
-    const p = JSON.parse(sessionStorage.getItem("spotify_profile") || "null");
-    return p ? p.premium === false : false;
-  } catch {
-    return false;
-  }
-}
-
-// Deep link to a song in Spotify. Real generate_playlist rows carry a track_id
-// (-> /track/<id>); the placeholder tracklist below has none, so fall back to a
-// search link, which still resolves to the song in Spotify.
-function spotifyUrl(title, artist, trackId) {
-  if (trackId) return `https://open.spotify.com/track/${encodeURIComponent(trackId)}`;
-  return `https://open.spotify.com/search/${encodeURIComponent(`${title} ${artist}`)}`;
-}
-
-async function openInSpotify(title, artist, trackId) {
-  try {
-    await callPy("open_external_url", spotifyUrl(title, artist, trackId));
-  } catch (err) {
-    console.error("Couldn't open the track in Spotify:", err);
-  }
-}
-
+// Page copy per emotion; accent/emoji/cover come from EMOTION_THEMES. The
+// placeholder tracks disappear with the F6 generate_playlist wiring.
 const EMOTIONS = {
   happy: {
-    accent: "#6ffbbe",
-    img: "../assets/img/emoji-happy.png",
-    cover: "../assets/img/cover-happy.png",
     heading: "You seem Happy!",
     subtitle: "We have customized a playlist to match this vibe.",
     title: "Happy Playlist",
@@ -58,9 +41,6 @@ const EMOTIONS = {
     ],
   },
   surprised: {
-    accent: "#4edea3",
-    img: "../assets/img/emoji-surprised.png",
-    cover: "../assets/img/cover-surprised.png",
     heading: "You seem Surprised!",
     subtitle: "Unexpected drops, sudden tempo changes, and tracks that'll catch you off guard.",
     title: "Surprise Mix",
@@ -72,9 +52,6 @@ const EMOTIONS = {
     ],
   },
   sad: {
-    accent: "#82b1ff",
-    img: "../assets/img/emoji-sad.png",
-    cover: "../assets/img/cover-sad.png",
     heading: "You seem Sad.",
     subtitle: "Embrace the melancholy. We've curated a collection of deeply emotional and reflective tracks to accompany your quiet moments.",
     title: "Sad Melodies",
@@ -87,9 +64,6 @@ const EMOTIONS = {
     ],
   },
   neutral: {
-    accent: "#facc15",
-    img: "../assets/img/emoji-neutral.png",
-    cover: "../assets/img/cover-neutral.png",
     heading: "You seem Neutral.",
     subtitle: "We have customized a playlist to match this vibe.",
     title: "Neutral Playlist",
@@ -101,9 +75,6 @@ const EMOTIONS = {
     ],
   },
   angry: {
-    accent: "#ff6b6b",
-    img: "../assets/img/emoji-angry.png",
-    cover: "../assets/img/cover-angry.png",
     heading: "You seem Angry!",
     subtitle: "We have customized a playlist to match this vibe.",
     title: "Angry Playlist",
@@ -116,97 +87,131 @@ const EMOTIONS = {
   },
 };
 
-function hexToRgba(hex, alpha) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function trackRow(index, [title, artist, album, time], accent, isFree) {
-  const el = document.createElement("div");
-  el.className =
-    "track-grid px-4 md:px-6 py-3 group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2" +
-    (index === 1 ? " mt-1" : "");
-  // Hover affordance: Premium plays in-app (play_arrow); Free opens the song in
-  // Spotify (open_in_new). Playback itself is still placeholder for Premium.
-  const hoverIcon = isFree
-    ? `<span class="material-symbols-outlined text-[18px]">open_in_new</span>`
-    : `<span class="material-symbols-outlined filled text-[20px]">play_arrow</span>`;
-  el.innerHTML = `
-    <div class="text-center text-on-surface-variant group-hover:hidden">${index}</div>
-    <div class="text-center text-primary hidden group-hover:flex items-center justify-center">${hoverIcon}</div>
-    <div class="flex items-center gap-3 min-w-0">
-      <div class="w-10 h-10 rounded flex items-center justify-center shadow-sm shrink-0" style="background-color: ${hexToRgba(accent, 0.2)};"><span class="material-symbols-outlined text-[20px]" style="color: ${accent};">music_note</span></div>
-      <div class="truncate"><p class="text-body-md font-body-md text-on-surface font-medium truncate"></p></div>
-    </div>
-    <div class="text-body-md font-body-md text-on-surface-variant truncate group-hover:text-on-surface transition-colors"></div>
-    <div class="track-col-album text-body-md font-body-md text-on-surface-variant truncate"></div>
-    <div class="text-right text-body-md font-body-md text-on-surface-variant font-medium"></div>`;
-  // Assign text via textContent (children: 0 #, 1 play, 2 title-block, 3 artist, 4 album, 5 time).
-  el.querySelector("p").textContent = title;
-  el.children[3].textContent = artist;
-  el.children[4].textContent = album;
-  el.children[5].textContent = time;
-  if (isFree) {
-    // Real rows will pass track_id here as a 3rd arg once generate_playlist is wired.
-    el.title = "Open in Spotify";
-    el.addEventListener("click", () => openInSpotify(title, artist));
+// Free mode: no in-app playback, so drop the play-whole-playlist affordances
+// (opening 24 external tabs makes no sense) and surface the "opens in Spotify"
+// hint. Per-track opening is handled inside trackRow.
+function applyFreeMode() {
+  document.getElementById("cover-play-overlay")?.remove();
+  document.getElementById("playlist-play-btn")?.remove();
+  const hint = document.getElementById("free-playback-hint");
+  if (hint) {
+    hint.classList.remove("hidden");
+    hint.classList.add("flex");
   }
-  return el;
 }
 
-window.addEventListener("load", () => {
-  const key = (sessionStorage.getItem("last_emotion") || "happy").toLowerCase();
-  const e = EMOTIONS[key] || EMOTIONS.happy;
+// Cover tile: gradient backdrop + cover art, falling back to the emotion emoji
+// (theme pages) or a plain music note (saved playlists without an emotion).
+function renderCover(accent, theme) {
+  document.getElementById("playlist-cover").style.backgroundImage =
+    `linear-gradient(135deg, ${accent}, #222a3d)`;
+  const coverIcon = document.getElementById("cover-icon");
+  if (theme) {
+    coverIcon.className = "w-full h-full object-cover";
+    coverIcon.onerror = () => {
+      coverIcon.onerror = null;
+      coverIcon.className = "w-32 h-32 object-contain";
+      coverIcon.src = theme.emoji;
+    };
+    coverIcon.src = theme.cover;
+  } else {
+    const icon = document.createElement("span");
+    icon.className = "material-symbols-outlined text-[96px] text-on-surface/70";
+    icon.textContent = "music_note";
+    coverIcon.replaceWith(icon);
+  }
+}
+
+// ---- Mode 1: saved playlist (#playlist=<id>) --------------------------------
+
+async function renderSavedPlaylist(playlistId) {
+  // A saved playlist isn't a fresh detection: no mood banner.
+  document.getElementById("result-banner")?.remove();
   const free = isFreeUser();
+  if (free) applyFreeMode();
+
+  let playlist = null;
+  try {
+    playlist = await callPy("load_playlist", playlistId);
+  } catch (err) {
+    console.error("load_playlist failed:", err);
+  }
+  if (!playlist) {
+    document.getElementById("playlist-title").textContent = "Playlist not found";
+    document.getElementById("playlist-meta").textContent =
+      "It may have been deleted. Pick another playlist from the sidebar.";
+    document.getElementById("cover-play-overlay")?.remove();
+    document.getElementById("playlist-play-btn")?.remove();
+    document.title = "EchoSoul - Playlist not found";
+    return;
+  }
+
+  const theme = EMOTION_THEMES[(playlist.source_emotion || "").toLowerCase()] || null;
+  const accent = theme ? theme.accent : DEFAULT_ACCENT;
+  renderCover(accent, theme);
+
+  document.getElementById("playlist-title").textContent = playlist.name;
+  const totalMs = playlist.tracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0);
+  document.getElementById("playlist-meta").textContent = formatPlaylistMeta(
+    playlist.tracks.length,
+    totalMs
+  );
+
+  const list = document.getElementById("tracklist");
+  list.innerHTML = "";
+  playlist.tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, dbTrack(t), accent, free)));
+
+  document.title = `EchoSoul - ${playlist.name}`;
+}
+
+// ---- Mode 2: detection flow (placeholder until F6) ---------------------------
+
+function renderDetectionResult() {
+  const key = (sessionStorage.getItem("last_emotion") || "happy").toLowerCase();
+  const emotion = EMOTIONS[key] ? key : "happy";
+  const e = EMOTIONS[emotion];
+  const theme = EMOTION_THEMES[emotion];
+  const free = isFreeUser();
+  if (free) applyFreeMode();
 
   // Banner
   const banner = document.getElementById("result-banner");
-  banner.style.backgroundColor = hexToRgba(e.accent, 0.12);
+  banner.style.backgroundColor = hexToRgba(theme.accent, 0.12);
   document.getElementById("result-banner-overlay").style.background =
-    `linear-gradient(to bottom, ${hexToRgba(e.accent, 0.1)}, transparent)`;
+    `linear-gradient(to bottom, ${hexToRgba(theme.accent, 0.1)}, transparent)`;
   const emoji = document.getElementById("result-emoji");
-  emoji.src = e.img;
+  emoji.src = theme.emoji;
   emoji.alt = e.heading;
-  emoji.style.filter = `drop-shadow(0 0 18px ${hexToRgba(e.accent, 0.45)})`;
+  emoji.style.filter = `drop-shadow(0 0 18px ${hexToRgba(theme.accent, 0.45)})`;
   const heading = document.getElementById("result-heading");
   heading.textContent = e.heading;
-  heading.style.color = e.accent;
+  heading.style.color = theme.accent;
   document.getElementById("result-subtitle").textContent = e.subtitle;
 
-  // Cover + meta — use the fixed per-emotion cover art. The gradient stays as a
-  // backdrop and only shows if the cover image is missing (see onerror below).
-  const cover = document.getElementById("playlist-cover");
-  cover.style.backgroundImage = `linear-gradient(135deg, ${e.accent}, #222a3d)`;
-  const coverIcon = document.getElementById("cover-icon");
-  coverIcon.className = "w-full h-full object-cover";
-  coverIcon.onerror = () => {
-    // Cover art not uploaded yet: fall back to the centred emoji over the gradient.
-    coverIcon.onerror = null;
-    coverIcon.className = "w-32 h-32 object-contain";
-    coverIcon.src = e.img;
-  };
-  coverIcon.src = e.cover;
+  renderCover(theme.accent, theme);
   document.getElementById("playlist-title").textContent = e.title;
   document.getElementById("playlist-meta").textContent = e.meta;
 
-  // Free mode: no in-app playback, so drop the play-whole-playlist affordances
-  // (opening 24 external tabs makes no sense) and surface the "opens in Spotify"
-  // hint. Per-track opening is handled inside trackRow.
-  if (free) {
-    document.getElementById("cover-play-overlay")?.remove();
-    document.getElementById("playlist-play-btn")?.remove();
-    const hint = document.getElementById("free-playback-hint");
-    if (hint) {
-      hint.classList.remove("hidden");
-      hint.classList.add("flex");
-    }
-  }
-
-  // Tracklist
+  // Tracklist (placeholder tuples -> the shared row shape; no track_id yet, so
+  // Free clicks fall back to a Spotify search link).
   const list = document.getElementById("tracklist");
   list.innerHTML = "";
-  e.tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, t, e.accent, free)));
+  e.tracks.forEach(([title, artist, album, time], i) =>
+    list.appendChild(trackRow(i + 1, { title, artist, album, time }, theme.accent, free))
+  );
 
-  document.title = `MoodStream - ${e.title}`;
+  document.title = `EchoSoul - ${e.title}`;
+}
+
+// Switching playlists from the sidebar while already on this page only changes
+// the hash, which does not reload the document — force the re-render.
+window.addEventListener("hashchange", () => window.location.reload());
+
+window.addEventListener("load", () => {
+  const saved = window.location.hash.match(/^#playlist=(\d+)$/);
+  if (saved) {
+    renderSavedPlaylist(Number(saved[1]));
+    return;
+  }
+  renderDetectionResult();
 });

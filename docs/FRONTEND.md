@@ -58,21 +58,22 @@ frontend/
 └── js/
     ├── vendor/tailwind.js  ✅ vendored Tailwind Play build
     ├── tailwind-config.js  ✅ shared theme tokens
-    ├── chrome.js           ✅ shared page chrome (sidebar + top bar + bottom player), responsive drawer, nav wiring, header-scroll
+    ├── chrome.js           ✅ shared page chrome (sidebar shell + top bar + bottom player), responsive drawer, nav wiring, header-scroll, profile chip + account dropdown (logout)
     ├── titlebar.js         ✅ frameless-window controls (min/max/close + drag regions); loads after chrome.js
-    ├── home.js             ✅ hero zoom + manual-mood / scan navigation
+    ├── home.js             ✅ hero zoom + manual-mood / scan navigation + live "latest saved playlist" showcase
     ├── mood.js             ✅ mood-card selection → loading
     ├── photo.js            ✅ capture → loading (webcam wiring pending)
     ├── loading.js          ✅ auto-advance to result (inference wiring pending)
-    ├── result.js           ✅ per-emotion content + tracklist renderer
+    ├── result.js           ✅ per-emotion placeholder content + live saved-playlist view (#playlist=<id>)
     ├── shader.js           ✅ optional WebGL "Vibe Canvas" background (opt-in)
     ├── bridge.js           ✅ callPy()/callPyWithTimeout(): pywebviewready wait + timeout
     ├── auth_gate.js        ✅ runs on index.html; routes to login / premium / home
     ├── login.js            ✅ login page: start_spotify_login with a long-timeout bridge call
     ├── premium_required.js ✅ premium gate: upgrade link (system browser), re-check, logout
+    ├── sidebar.js          ✅ saved-playlists sidebar — live data (open / rename / delete via kebab menu)
+    ├── playlists_ui.js     ✅ shared tracklist-row / duration / emotion-theme helpers (home, result, sidebar)
     ├── camera.js           ⬜ webcam preview + capture
     ├── playback.js         ⬜ Spotify SDK initialisation + playback control (replaces the placeholder bottom player rendered by chrome.js)
-    ├── sidebar.js          ⬜ saved-playlists sidebar — live data (replaces the placeholder playlist list rendered by chrome.js)
     └── error_handler.js    ⬜ maps error codes to user-facing messages
 ```
 
@@ -328,6 +329,13 @@ document.querySelector("#manual-mood-btn").addEventListener("click", () => {
 });
 ```
 
+As-built addition: below the scanner hero and the mood chips, `home.js` renders
+a **"Your latest playlist"** showcase — the newest saved playlist
+(`list_user_playlists[0]` → `load_playlist`) with cover, meta line and the
+first 5 tracks (plus a "View all N songs" row). The section stays hidden while
+nothing has been saved yet. Cover, title and the "Open playlist" button all
+open `result.html#playlist=<id>`.
+
 ### `photo.html`
 
 Two states:
@@ -493,6 +501,17 @@ window.addEventListener("load", () => {
 
 Edit mode allows the user to remove individual tracks before saving. Adds (searching for new tracks) is a stretch goal — defer if time-constrained.
 
+As-built addition — **saved-playlist view**: when the page is opened as
+`result.html#playlist=<id>` (sidebar rows, home showcase), `result.js` drops
+the mood banner (a saved playlist isn't a fresh detection) and renders the
+stored playlist from `load_playlist`: real tracks, a computed
+songs-and-duration meta line, and the per-emotion accent (theme primary for
+user-created playlists with no source emotion). Free accounts get the same
+degradation as the detection view — no play-all affordances, each track opens
+in Spotify via its real `track_id`. A deleted/unknown id shows "Playlist not
+found". The page reloads itself on `hashchange` so sidebar clicks that only
+change the hash re-render.
+
 ### `error.html`
 
 Shows a message keyed by `sessionStorage.error_code`:
@@ -524,21 +543,35 @@ document.querySelector("#back-btn").addEventListener("click", () => {
 
 ## Sidebar (shared across pages)
 
-Lists saved playlists. Refreshed on every page load (cheap query).
+As-built: `chrome.js` renders the sidebar shell with an empty
+`#sidebar-playlists` container on every chrome page; `js/sidebar.js` (a module
+loaded right after `chrome.js`/`titlebar.js` on all six pages) fills it from
+`list_user_playlists` on every page load (cheap query, newest-updated first).
 
-```javascript
-// frontend/js/sidebar.js
-window.addEventListener("load", async () => {
-  const playlists = await callPy("list_user_playlists");
-  renderSidebar(playlists);
-});
-```
+Each row shows the emotion emoji (from `playlists_ui.js`'s `EMOTION_THEMES`;
+`music_note` for user-created playlists without a source emotion), the name and
+the song count. Interactions:
 
-Sidebar items:
-- Click → load that playlist into result.html
-- Right-click (or kebab menu) → delete / rename
+- **Click** → opens `result.html#playlist=<id>` (the saved-playlist view). The
+  row of the playlist currently open on the result page is highlighted.
+  `result.js` reloads on `hashchange`, so switching playlists while already on
+  the result page works.
+- **Kebab menu (⋯, appears on hover)** → **Rename** (inline input in place;
+  Enter commits via `rename_playlist`, Esc/blur cancels) and **Delete** (the
+  menu item turns into "Confirm delete?" — the second click calls
+  `delete_playlist`; PyWebView doesn't reliably support `window.confirm`).
+  Deleting the playlist currently open on the result page navigates home.
 
-Use `sessionStorage` to pass the selected playlist between pages, or pass via URL hash: `result.html#playlist=42`.
+### Header profile chip (chrome.js)
+
+The top-right circle shows the first letter of the Spotify display name from
+`sessionStorage.spotify_profile` (stashed by the auth gate for Premium users
+and by `premium_required.js` for Free mode); the generic person icon stays when
+no profile is stashed. Clicking it opens an account dropdown — display name,
+email, Premium/Free badge — with a **Log out** button that calls the `logout`
+bridge method (directly via `pywebview.api`, since `chrome.js` is a plain
+script) and returns to `login.html`. The notifications button was removed
+(owner decision, July 2026).
 
 ---
 
