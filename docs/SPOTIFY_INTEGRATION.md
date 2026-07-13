@@ -304,122 +304,91 @@ The Premium check runs:
 
 ## Web Playback SDK (frontend)
 
-The SDK is JavaScript-only. It instantiates a Spotify player inside the webview that Spotify treats as a Spotify Connect device — like the user's phone or speakers.
+The SDK is JavaScript-only. It instantiates a Spotify player inside the webview that Spotify treats as a Spotify Connect device (named **EchoSoul**) — like the user's phone or speakers.
+
+As-built, everything below lives in `frontend/js/playback.js`, an ES module loaded on every chrome page that shows the bottom player (home / mood / loading / result / error). It no-ops entirely for Free accounts (chrome.js doesn't even render the player) and on pages without the footer. It drives the bottom player and exports one function for other modules:
+
+```javascript
+playTracks(trackIds, startIndex)  // used by result.js: play-all + per-track play
+```
 
 ### Loading the SDK
 
-```html
-<!-- frontend/index.html, in <head> -->
-<script src="https://sdk.scdn.co/spotify-player.js"></script>
-```
+`playback.js` injects `<script src="https://sdk.scdn.co/spotify-player.js">` **dynamically** (not a static tag in each page's `<head>`) so it can attach an `onerror` fallback — offline, the player shows *"Playback unavailable — check your internet connection"* instead of dying silently — and so the SDK only loads where the player exists. The SDK calls `window.onSpotifyWebPlaybackSDKReady` when loaded; the callback must be assigned **before** the script tag is appended.
 
-The SDK calls `window.onSpotifyWebPlaybackSDKReady` when it's loaded.
+### Page navigation & session resume
 
-### Initialising the player
+The app navigates between real HTML files (docs/FRONTEND.md "Routing"), so the SDK — and its Connect device, whose `device_id` changes every time — is torn down and recreated on every page change. Continuity is server-side: Spotify keeps the playback session (queue + position) alive for a while after a device disconnects.
+
+- On `pagehide`, the outgoing page stashes `sessionStorage.playback_resume = "playing" | "paused"` from its last known state, then calls `player.disconnect()`.
+- On `ready`, the incoming page transfers the session to its new device — `PUT /me/player {device_ids: [id], play: stash === "playing"}` — resuming mid-track after a sub-second gap. A failed transfer (typically 404: session expired or taken over by another device) drops the stash.
+- **No unconditional transfer on ready.** The CP1-era sketch transferred playback to the webview on every page load; as-built that would silently hijack the user's phone/desktop Spotify session every time the app shows a page. Transfer happens only when *resuming* (stash present) or when the user explicitly plays (`playTracks` carries `device_id`, which switches the active device).
+- Only a page whose SDK actually reached `ready` may clear the stash — the short-lived loading page often navigates away before the SDK finishes connecting and must leave the stash for the result page to consume.
+
+Resuming after a navigation happens with **no user gesture in the new document**, which Chromium's autoplay policy would normally block. `src/main.py` therefore sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--autoplay-policy=no-user-gesture-required` (the WebView2 loader appends it to pywebview's own browser arguments). Belt and braces: the SDK's `autoplay_failed` event is handled anyway — if the flag ever stops working, the player just stays paused with a *"Press play to resume your music"* toast.
+
+### Initialising the player (as-built outline)
 
 ```javascript
-// frontend/js/playback.js
-
-window.onSpotifyWebPlaybackSDKReady = async () => {
-  // Get a fresh access token from Python
-  const token = await pywebview.api.get_spotify_access_token();
-
-  const player = new Spotify.Player({
-    name: "Emotion Music Recommender",
-    getOAuthToken: cb => {
+// frontend/js/playback.js (abridged — see the module)
+window.onSpotifyWebPlaybackSDKReady = () => {
+  player = new Spotify.Player({
+    name: "EchoSoul",
+    getOAuthToken: (cb) => {
       // Called by the SDK whenever it needs a (possibly refreshed) token.
-      pywebview.api.get_spotify_access_token().then(cb);
+      callPy("get_spotify_access_token").then(cb).catch(/* expired session -> auth handler */);
     },
-    volume: 0.5,
+    volume: 0.7,
   });
 
-  // Error listeners (REQUIRED — silent failure is the default)
-  player.addListener("initialization_error",  ({ message }) => onSdkError("init", message));
-  player.addListener("authentication_error",  ({ message }) => onSdkError("auth", message));
-  player.addListener("account_error",         ({ message }) => onSdkError("account", message));
-  player.addListener("playback_error",        ({ message }) => onSdkError("playback", message));
+  // Error listeners (REQUIRED — silent failure is the default), see table below
+  player.addListener("initialization_error", ({ message }) => onSdkError("init", message));
+  player.addListener("authentication_error", ({ message }) => onSdkError("auth", message));
+  player.addListener("account_error",        ({ message }) => onSdkError("account", message));
+  player.addListener("playback_error",       ({ message }) => onSdkError("playback", message));
+  player.addListener("autoplay_failed",      () => showToast("Press play to resume your music."));
 
-  // State listeners
-  player.addListener("ready", ({ device_id }) => {
-    window.spotifyDeviceId = device_id;
-    transferPlaybackHere(device_id);
-  });
-  player.addListener("not_ready",   ({ device_id }) => { /* device went offline */ });
-  player.addListener("player_state_changed", state => updatePlayerUI(state));
+  player.addListener("ready", ({ device_id }) => { /* resolve deviceReady; consume resume stash */ });
+  player.addListener("not_ready", () => renderState(null));
+  player.addListener("player_state_changed", (state) => renderState(state));
 
-  await player.connect();
-  window.spotifyPlayer = player;
+  player.connect();
 };
-
-async function transferPlaybackHere(deviceId) {
-  const token = await pywebview.api.get_spotify_access_token();
-  await fetch("https://api.spotify.com/v1/me/player", {
-    method: "PUT",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ device_ids: [deviceId], play: false }),
-  });
-}
 ```
 
-### Playing a track
+### Playing tracks
 
-```javascript
-async function playTrack(trackId) {
-  const token = await pywebview.api.get_spotify_access_token();
-  await fetch(
-    `https://api.spotify.com/v1/me/player/play?device_id=${window.spotifyDeviceId}`,
-    {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
-    }
-  );
-}
+`playTracks(trackIds, startIndex)`:
 
-async function playPlaylist(trackIds) {
-  // Queue an array of tracks (treated as an ad-hoc playlist by Spotify)
-  const token = await pywebview.api.get_spotify_access_token();
-  await fetch(
-    `https://api.spotify.com/v1/me/player/play?device_id=${window.spotifyDeviceId}`,
-    {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uris: trackIds.map(id => `spotify:track:${id}`) }),
-    }
-  );
-}
-```
+1. Waits for the device (`ready`) with a 12 s timeout — a click right after page load must not race the SDK connect.
+2. Calls `player.activateElement()` (we're inside a user-gesture handler — Spotify's recommended autoplay unlock).
+3. `PUT /me/player/play?device_id=<id>` with `{uris: ["spotify:track:...", ...], offset: {position: startIndex}}` — the whole playlist becomes the queue, started at the clicked track, so prev/next on the player walk it.
+4. Retries once (700 ms) on 404: a just-connected device can take a moment to register with Spotify's backend.
 
-The SDK then handles streaming. Audio plays out of the system's audio output device.
+The SDK then handles streaming; audio plays out of the system's audio output device.
+
+### The bottom player (chrome pages)
+
+`chrome.js` renders the player idle ("Nothing playing", transport disabled); `playback.js` drives it from `player_state_changed`: track name / artists / smallest album image, play↔pause icon, shuffle highlight, and the waveform-bar progress display, which doubles as the **seek bar** (a click maps X→fraction→`player.seek`). The SDK only pushes state on *changes*, so a 500 ms local tick advances the position while playing. Play/pause, prev and next use the SDK player methods; **shuffle has no SDK method** and goes through `PUT /me/player/shuffle?state=...&device_id=...`; the volume slider (hover-revealed) and mute toggle use `player.setVolume`.
+
+### Error handling (as-built)
+
+All listeners funnel into `onSdkError(kind, message)`:
+
+| Listener | Common cause | Handler in playback.js |
+|---|---|---|
+| `initialization_error` | SDK couldn't start (no DRM/CDM, browser too old) | Player shows "Playback unavailable" + reason |
+| `authentication_error` | Token expired, invalid, or insufficient scope | Redirect to the auth gate (`index.html`) — **once per session** (sessionStorage guard), so a persistent failure can't bounce the user between pages forever |
+| `account_error` | Free account, restricted region | "Playback unavailable (Premium required)" — shouldn't happen behind the gate |
+| `playback_error` | Network drop, track unavailable in region | Toast "Spotify couldn't play this track." — deliberately **no auto-skip**: a systematic failure would cascade toasts through all 25 tracks |
+| `autoplay_failed` | Autoplay gate blocked an un-gestured resume | Toast "Press play to resume your music." |
 
 ### SDK + PyWebView gotchas
 
-- **Autoplay restrictions.** Browsers (including PyWebView's underlying Chromium) block audio playback that wasn't triggered by user interaction. The first `play` call must be in response to a button click event. Subsequent play calls within the same session work without further interaction.
-- **`player.activateElement()`** — call this on the very first user click if the SDK reports that the player is "not yet active". It's a Spotify-recommended workaround for autoplay gating.
+- **Autoplay restrictions.** See *Page navigation & session resume* above — main.py lifts the gate for cross-page resume; explicit plays run inside click handlers anyway and also call `player.activateElement()`.
+- **DRM (Widevine).** The SDK streams EME/Widevine-protected audio. WebView2 supports Widevine (unlike PlayReady) and downloads the CDM component on demand — the very first playback on a fresh machine can fail until the CDM finishes installing. Verify during the F9 manual pass; a retry after a few seconds is the fix.
 - **WebView audio output.** PyWebView passes audio through to the OS audio stack on all platforms; no extra config required.
-- **Cookies / storage.** PyWebView's webview persists cookies between runs by default (per-platform behaviour). The SDK uses localStorage for some state — confirm it works on the first install before assuming.
-
-### Error handling
-
-The four error listeners (`initialization_error`, `authentication_error`, `account_error`, `playback_error`) each have specific causes:
-
-| Listener | Common cause | Handler |
-|---|---|---|
-| `initialization_error` | SDK couldn't load (CDN blocked, browser too old) | Show diagnostic; suggest disabling ad blockers |
-| `authentication_error` | Token expired, invalid, or insufficient scope | Force re-login |
-| `account_error` | Free account, restricted region | Display Premium-required message |
-| `playback_error` | Network drop, track unavailable in region | Toast + skip to next track |
-
-Pipe all four into a single `onSdkError(kind, message)` that logs and surfaces an appropriate UI state.
+- **Cookies / storage.** PyWebView's webview persists cookies between runs with `private_mode=False` (set in `src/main.py`). The SDK uses localStorage for some state — confirm it works on the first install before assuming.
 
 ---
 

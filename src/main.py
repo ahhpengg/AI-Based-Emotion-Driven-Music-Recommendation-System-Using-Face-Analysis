@@ -92,6 +92,27 @@ def _set_windows_app_identity() -> None:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EchoSoul.App")
 
 
+def _allow_media_autoplay() -> None:
+    """Let the webview start audio without a fresh user gesture.
+
+    The app navigates between real HTML files, so every page is a new document
+    with no user activation. Chromium's autoplay policy would block
+    playback.js's cross-page resume (transfer with ``play: true`` after a
+    navigation) even though the music was started by a click two pages ago.
+    WebView2 appends ``WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`` to the browser
+    arguments pywebview sets programmatically, so this is additive. playback.js
+    still handles the SDK's ``autoplay_failed`` event in case the flag is
+    ignored (e.g. a future WebView2 change): the player then just stays paused
+    until the user presses play.
+    """
+    if sys.platform != "win32":
+        return
+    flag = "--autoplay-policy=no-user-gesture-required"
+    existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+    if flag not in existing:
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{existing} {flag}".strip()
+
+
 def _set_window_icon(window: webview.Window) -> None:
     """Set the title-bar/taskbar icon on the native window.
 
@@ -159,6 +180,7 @@ def main() -> None:
 
     _check_database()
     _set_windows_app_identity()
+    _allow_media_autoplay()
 
     api = BridgeApi()
     # frameless: the OS title bar is replaced by the in-page one (js/titlebar.js

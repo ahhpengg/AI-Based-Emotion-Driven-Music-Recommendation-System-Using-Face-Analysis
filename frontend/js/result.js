@@ -19,6 +19,7 @@
  * auth gate / premium page stashed in sessionStorage.spotify_profile.
  */
 import { callPy } from "./bridge.js";
+import { playTracks } from "./playback.js";
 import {
   DEFAULT_ACCENT,
   EMOTION_THEMES,
@@ -26,6 +27,7 @@ import {
   formatPlaylistMeta,
   hexToRgba,
   isFreeUser,
+  showToast,
   trackRow,
 } from "./playlists_ui.js";
 import { refreshSidebarPlaylists } from "./sidebar.js";
@@ -137,9 +139,7 @@ async function renderSavedPlaylist(playlistId) {
     totalMs
   );
 
-  const list = document.getElementById("tracklist");
-  list.innerHTML = "";
-  playlist.tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, dbTrack(t), accent, free)));
+  renderTracklist(playlist.tracks, accent, free);
 
   document.title = `EchoSoul - ${playlist.name}`;
 }
@@ -186,13 +186,43 @@ function renderDetectionResult() {
   document.getElementById("playlist-meta").textContent =
     `${copy.metaLead} • ${formatPlaylistMeta(tracks.length, totalMs)}`;
 
-  const list = document.getElementById("tracklist");
-  list.innerHTML = "";
-  tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, dbTrack(t), theme.accent, free)));
+  renderTracklist(tracks, theme.accent, free);
 
   wireSaveButton(emotion, tracks, theme.accent);
 
   document.title = `EchoSoul - ${copy.title}`;
+}
+
+// ---- Tracklist + playback (shared by both views) -----------------------------
+
+// Renders the rows and, for Premium accounts, wires the play affordances:
+// play-all (the play_circle button + the cover hover overlay) starts the whole
+// list in order; clicking a row starts the list at that track, so next/prev on
+// the bottom player walk the playlist. playback.js owns the actual SDK device.
+function renderTracklist(tracks, accent, free) {
+  const trackIds = tracks.map((t) => t.track_id);
+  const list = document.getElementById("tracklist");
+  list.innerHTML = "";
+  tracks.forEach((t, i) =>
+    list.appendChild(
+      trackRow(i + 1, dbTrack(t), accent, free, free ? undefined : () => startPlayback(trackIds, i))
+    )
+  );
+  if (free) return; // applyFreeMode already removed the play-all affordances
+
+  document
+    .getElementById("playlist-play-btn")
+    ?.addEventListener("click", () => startPlayback(trackIds, 0));
+  document
+    .getElementById("cover-play-overlay")
+    ?.addEventListener("click", () => startPlayback(trackIds, 0));
+}
+
+function startPlayback(trackIds, startIndex) {
+  playTracks(trackIds, startIndex).catch((err) => {
+    console.error("playTracks failed:", err);
+    showToast(err.message || "Spotify couldn't start playback.");
+  });
 }
 
 // ---- Save (bookmark button, fresh-detection view only) ----------------------
@@ -235,22 +265,6 @@ function wireSaveButton(emotion, tracks, accent) {
     showToast("Playlist saved");
     refreshSidebarPlaylists();
   });
-}
-
-// Minimal transient toast (bottom-centre), the only save feedback beyond the
-// button state. PyWebView has no reliable alert(), hence DIY.
-function showToast(message) {
-  document.getElementById("app-toast")?.remove();
-  const toast = document.createElement("div");
-  toast.id = "app-toast";
-  toast.className =
-    "fixed bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full " +
-    "bg-surface-container-high border border-white/10 shadow-xl " +
-    "text-label-md font-label-md text-on-surface transition-opacity duration-300";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(() => (toast.style.opacity = "0"), 2200);
-  setTimeout(() => toast.remove(), 2600);
 }
 
 // Switching playlists from the sidebar while already on this page only changes

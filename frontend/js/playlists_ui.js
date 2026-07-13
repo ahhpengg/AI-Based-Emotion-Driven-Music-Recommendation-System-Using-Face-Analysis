@@ -103,10 +103,27 @@ export async function openInSpotify(title, artist, trackId) {
   }
 }
 
-// One tracklist row. Premium hover shows the in-app play affordance (playback
-// itself arrives with playback.js); Free hover shows open-in-new and the click
-// opens the song in Spotify (external browser / desktop app).
-export function trackRow(index, track, accent, isFree) {
+// Minimal transient toast (bottom-centre, above the player). PyWebView has no
+// reliable alert(), hence DIY. Shared by the save button and playback errors.
+export function showToast(message) {
+  document.getElementById("app-toast")?.remove();
+  const toast = document.createElement("div");
+  toast.id = "app-toast";
+  toast.className =
+    "fixed bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full " +
+    "bg-surface-container-high border border-white/10 shadow-xl " +
+    "text-label-md font-label-md text-on-surface transition-opacity duration-300";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => (toast.style.opacity = "0"), 2200);
+  setTimeout(() => toast.remove(), 2600);
+}
+
+// One tracklist row. Premium hover shows the in-app play affordance — pass
+// onPlay to make the click actually play (result page); rows without it stay
+// inert (home showcase). Free hover shows open-in-new and the click opens the
+// song in Spotify (external browser / desktop app).
+export function trackRow(index, track, accent, isFree, onPlay) {
   const el = document.createElement("div");
   el.className =
     "track-grid px-4 md:px-6 py-3 group hover:bg-white/5 transition-colors cursor-pointer rounded-lg mx-2" +
@@ -132,6 +149,9 @@ export function trackRow(index, track, accent, isFree) {
   if (isFree) {
     el.title = "Open in Spotify";
     el.addEventListener("click", () => openInSpotify(track.title, track.artist, track.trackId));
+  } else if (onPlay) {
+    el.title = "Play";
+    el.addEventListener("click", onPlay);
   }
   return el;
 }

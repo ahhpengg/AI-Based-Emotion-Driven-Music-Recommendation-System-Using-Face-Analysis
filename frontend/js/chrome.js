@@ -15,11 +15,12 @@
  *   - <  lg: sidebar becomes an off-canvas drawer toggled by the header's
  *     hamburger, dimmed by a backdrop; content goes full width.
  *
- * PLACEHOLDER DATA: the search box and the bottom player's "now playing" track
- * are static demo content until playback.js (Spotify SDK) exists. The sidebar
- * playlist list is LIVE: this script renders the empty #sidebar-playlists
- * container and js/sidebar.js (a module loaded after this script) fills it
- * from the Python bridge (list_user_playlists). See docs/FRONTEND.md.
+ * PLACEHOLDER DATA: the search box (and the player's queue button) are still
+ * static until they get a backend. The sidebar playlist list is LIVE: this
+ * script renders the empty #sidebar-playlists container and js/sidebar.js (a
+ * module loaded after this script) fills it from the Python bridge
+ * (list_user_playlists). The bottom player is rendered idle here and driven
+ * live by js/playback.js (Spotify Web Playback SDK). See docs/FRONTEND.md.
  */
 (function () {
   "use strict";
@@ -145,33 +146,46 @@
     </header>`;
   }
 
-  // ---- Bottom music player (placeholder "now playing") ---------------------
+  // ---- Bottom music player (idle shell; js/playback.js drives it) ----------
+  // Rendered "Nothing playing" with the transport disabled; playback.js fills
+  // it from Spotify Web Playback SDK state, wires the controls, and re-enables
+  // them once a playback session exists. The waveform doubles as the seek bar
+  // (playback.js lights the bars up to the playback position and maps clicks
+  // back to a seek). Only the queue button is still a placeholder.
   function footerHTML() {
-    const bars = [4, 6, 3, 8, 5, 7, 4, 6, 3, 5, 4, 6, 2].map(
-      (h) => `<div class="w-1 h-${h} bg-primary rounded-full"></div>`
-    ).join("") + [5, 7, 4, 6, 3, 8, 5, 7, 4, 6, 3, 5, 4, 6, 2].map(
-      (h) => `<div class="w-1 h-${h} bg-white/20 rounded-full"></div>`
+    const heights = [4, 6, 3, 8, 5, 7, 4, 6, 3, 5, 4, 6, 2, 5, 7, 4, 6, 3, 8, 5, 7, 4, 6, 3, 5, 4, 6, 2];
+    const bars = heights.map(
+      (h) => `<div data-bar class="w-1 h-${h} bg-white/20 rounded-full pointer-events-none"></div>`
     ).join("");
 
     return `
     <footer id="app-player" class="fixed bottom-0 left-0 right-0 w-full h-24 bg-surface-container/80 backdrop-blur-xl border-t border-white/10 z-20 flex items-center px-4 md:px-8 justify-between gap-4">
       <div class="flex items-center gap-3 md:gap-4 min-w-0 md:w-1/4">
-        <div class="w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden shadow-lg bg-surface-container-high flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-surface-variant">music_note</span></div>
-        <div class="flex flex-col min-w-0"><span class="text-on-surface font-bold font-headline-md text-body-md truncate">Snowfall</span><span class="text-on-surface-variant text-label-sm truncate">Oneheart</span></div>
+        <div class="w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden shadow-lg bg-surface-container-high flex items-center justify-center shrink-0">
+          <img id="player-cover" alt="" class="hidden w-full h-full object-cover">
+          <span id="player-cover-fallback" class="material-symbols-outlined text-on-surface-variant">music_note</span>
+        </div>
+        <div class="flex flex-col min-w-0">
+          <span id="player-title" class="text-on-surface font-bold font-headline-md text-body-md truncate">Nothing playing</span>
+          <span id="player-artist" class="text-on-surface-variant text-label-sm truncate">Play a playlist to get started</span>
+        </div>
       </div>
       <div class="flex items-center gap-4 md:gap-6 shrink-0">
-        <button data-placeholder aria-label="Previous" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">skip_previous</span></button>
-        <button data-placeholder aria-label="Play/Pause" class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg hover:scale-105 transition-transform"><span class="material-symbols-outlined filled">pause</span></button>
-        <button data-placeholder aria-label="Next" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">skip_next</span></button>
+        <button id="player-prev" disabled aria-label="Previous" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">skip_previous</span></button>
+        <button id="player-play" disabled aria-label="Play/Pause" class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg hover:scale-105 transition-transform disabled:opacity-40 disabled:hover:scale-100"><span class="material-symbols-outlined filled">play_arrow</span></button>
+        <button id="player-next" disabled aria-label="Next" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">skip_next</span></button>
       </div>
       <div class="hidden lg:flex items-center gap-4 flex-grow max-w-md mx-8">
-        <div class="flex gap-[2px] h-8 flex-grow items-center">${bars}</div>
-        <span class="text-on-surface-variant font-label-sm">03:12</span>
+        <div id="player-progress" class="flex gap-[2px] h-8 flex-grow items-center cursor-pointer">${bars}</div>
+        <span id="player-time" class="text-on-surface-variant font-label-sm whitespace-nowrap">0:00 / 0:00</span>
       </div>
       <div class="hidden md:flex items-center gap-4 w-1/4 justify-end">
-        <button data-placeholder aria-label="Shuffle" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">shuffle</span></button>
+        <button id="player-shuffle" disabled aria-label="Shuffle" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">shuffle</span></button>
         <button data-placeholder aria-label="Queue" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">queue_music</span></button>
-        <button data-placeholder aria-label="Volume" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">volume_up</span></button>
+        <div class="group flex items-center gap-2">
+          <input id="player-volume" type="range" min="0" max="100" value="70" aria-label="Volume" class="hidden group-hover:block w-24 accent-primary cursor-pointer">
+          <button id="player-mute" aria-label="Mute" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">volume_up</span></button>
+        </div>
       </div>
     </footer>`;
   }

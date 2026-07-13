@@ -70,9 +70,9 @@ frontend/
     ├── login.js            ✅ login page: start_spotify_login with a long-timeout bridge call
     ├── premium_required.js ✅ premium gate: upgrade link (system browser), re-check, logout
     ├── sidebar.js          ✅ saved-playlists sidebar — live data (open / rename / delete via kebab menu)
-    ├── playlists_ui.js     ✅ shared tracklist-row / duration / emotion-theme helpers (home, result, sidebar)
+    ├── playlists_ui.js     ✅ shared tracklist-row / duration / emotion-theme / toast helpers (home, result, sidebar, playback)
     ├── camera.js           ✅ webcam preview + 2 Hz face guide (quick_face_check) + capture/retake/use (replaced photo.js)
-    ├── playback.js         ⬜ Spotify SDK initialisation + playback control (replaces the placeholder bottom player rendered by chrome.js)
+    ├── playback.js         ✅ Spotify Web Playback SDK: drives the bottom player, resumes the session across page navigations, exports playTracks() for result.js
     └── error_handler.js    ✅ maps sessionStorage.error_code to the user-facing message on error.html
 ```
 
@@ -126,9 +126,10 @@ page. They are now defined **once** in `js/chrome.js` and injected per page.
   synchronously during body parse, so the injected nodes exist (and are present
   at `DOMContentLoaded`, so Tailwind JIT styles them) before page code runs.
 - Navigation is wired by event delegation on `[data-nav]` (home / scan / back /
-  forward / open-sidebar / close-sidebar). Controls with no backend yet
-  (search, notifications, sidebar playlist links, player transport) carry
-  `data-placeholder` and are no-ops for now.
+  forward / open-sidebar / close-sidebar). Controls with no backend yet (the
+  search box, the player's queue button) carry `data-placeholder` and are
+  no-ops for now. The bottom player itself is rendered idle here and driven
+  live by `js/playback.js`.
 - **Responsive:** at `lg` (≥1024px) the layout is the fixed 280px sidebar + main
   canvas. Below `lg` the sidebar becomes an off-canvas drawer toggled by the
   header hamburger (with a dimming backdrop), the main column goes full width
@@ -168,9 +169,9 @@ Each page's `<head>` includes the same boilerplate:
 </head>
 ```
 
-The Spotify SDK is loaded once, at `index.html`, and survives across page navigations only if we use the History API or single-page navigation. Since we use file navigation, **the SDK reinitialises on every page**. This is fine — `player.connect()` is fast (sub-second), and the access token is cached in the keyring.
+The Spotify SDK does not survive file navigation: **it reinitialises on every page** (each page is a fresh document). As-built, `js/playback.js` loads the SDK on each chrome page that shows the bottom player and bridges the gap with Spotify's server-side session — the outgoing page stashes whether music was playing (`sessionStorage.playback_resume`), the incoming page's new SDK device transfers the session to itself and resumes mid-track after a sub-second gap. See `docs/SPOTIFY_INTEGRATION.md` > "Page navigation & session resume" (including the autoplay-policy flag `src/main.py` sets to allow the un-gestured resume).
 
-**Decision:** Keep file navigation for now; reconsider if SDK reinit causes audio glitches. If it does, refactor to a single `index.html` with hash routes.
+**Decision:** Keep file navigation; the resume gap is acceptable. If it ever isn't, refactor to a single `index.html` with hash routes.
 
 ---
 
@@ -478,12 +479,15 @@ Buttons under the title:
   `refreshSidebarPlaylists()` (imported from `sidebar.js`) shows the new row
   live. On failure the button re-enables with an error toast. The saved
   view (`#playlist=<id>`) removes this button — it's already saved.
-- **Play-all** (`#playlist-play-btn`): wired by `playback.js` (F7); removed
-  in Free mode.
+- **Play-all** (`#playlist-play-btn`, and the cover's hover overlay): starts
+  the whole list on the in-app SDK device via `playTracks(trackIds, 0)`
+  (imported from `playback.js`). Clicking a **track row** starts the list *at
+  that track*, so prev/next on the bottom player walk the playlist. Failures
+  surface as a toast. All of it removed in Free mode.
 - **Edit** (remove tracks before saving): deferred — `data-placeholder`
   no-op for now. Adds (searching for new tracks) is a further stretch goal.
 
-Toasts are a DIY 10-liner in result.js (PyWebView has no reliable
+Toasts are a DIY 10-liner shared from playlists_ui.js (PyWebView has no reliable
 `alert()`): a fixed bottom-centre pill that fades after ~2 s.
 
 As-built addition — **saved-playlist view**: when the page is opened as
@@ -556,17 +560,28 @@ script) and returns to `login.html`. The notifications button was removed
 
 ---
 
-## Spotify SDK integration
+## Spotify SDK integration (js/playback.js)
 
-The SDK script is loaded in `index.html` (and any page that needs playback):
+`playback.js` is a module loaded on the five chrome pages that show the bottom
+player (home / mood / loading / result / error). It injects the SDK script
+dynamically (with an `onerror` "Playback unavailable" fallback for offline),
+initialises the `Spotify.Player` (device name **EchoSoul**, token via the
+`get_spotify_access_token` bridge method), and:
 
-```html
-<script src="https://sdk.scdn.co/spotify-player.js"></script>
-```
+- **drives the bottom player** chrome.js renders idle: now-playing title /
+  artists / album art, play-pause / prev / next (SDK player methods), the
+  waveform bars as a live progress + seek bar, shuffle (Web API — the SDK has
+  no shuffle method) and a hover-revealed volume slider + mute toggle. The
+  transport stays disabled until a playback session exists.
+- **resumes the session across page navigations** — see the Routing section
+  above and `docs/SPOTIFY_INTEGRATION.md` for the stash/transfer mechanics.
+- **exports `playTracks(trackIds, startIndex)`**, the one entry point other
+  modules use (result.js).
 
-The `window.onSpotifyWebPlaybackSDKReady` callback (see `docs/SPOTIFY_INTEGRATION.md`) initialises the player. Stash `window.spotifyPlayer` and `window.spotifyDeviceId` for use by `playback.js`'s play/pause/skip helpers.
-
-The Premium check has already been done before any playback page is reachable, so by the time `playback.js` runs, we can assume Premium.
+For Free accounts chrome.js doesn't render the player and `playback.js`
+no-ops; on Premium pages the Premium check has already passed at the gate, so
+`playback.js` can assume Premium (the SDK's `account_error` is still handled,
+just not expected).
 
 ---
 
