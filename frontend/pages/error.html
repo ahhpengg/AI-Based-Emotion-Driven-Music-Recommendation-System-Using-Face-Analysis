@@ -22,19 +22,19 @@
 
     <div class="z-10 flex flex-col items-center justify-center max-w-2xl w-full">
       <!-- Error Illustration -->
-      <div class="relative w-full max-w-md mb-8 flex items-center justify-center">
-        <img src="../assets/img/error.png" alt="Out-of-scope emotion" class="w-full max-h-[280px] md:max-h-[360px] object-contain drop-shadow-[0_0_30px_rgba(221,183,255,0.25)]">
+      <div class="relative w-full max-w-md mb-6 flex items-center justify-center">
+        <img src="../assets/img/error.png" alt="Out-of-scope emotion" class="w-full max-h-[200px] md:max-h-[240px] object-contain drop-shadow-[0_0_30px_rgba(221,183,255,0.25)]">
       </div>
 
-      <!-- Error Message (text set per error_code by the backend wiring later) -->
+      <!-- Error Message (text set per sessionStorage.error_code by error_handler.js) -->
       <div class="flex flex-col items-center text-center gap-4">
         <h2 class="text-headline-lg font-headline-lg md:text-headline-xl md:font-headline-xl font-bold text-white tracking-tight">Sorry !</h2>
         <p id="error-message" class="text-body-md md:text-body-lg font-body-md text-on-surface-variant max-w-md">Looks like you're showing an out-of-system-defined emotion...<br>Please reattempt the session</p>
       </div>
 
       <!-- Action Button -->
-      <div class="mt-12">
-        <a href="home.html" class="inline-block bg-white text-background px-8 py-3 rounded-full font-label-md font-bold hover:scale-105 transition-transform shadow-lg">Back to Home Page</a>
+      <div class="mt-8">
+        <a href="home.html" class="inline-block bg-primary text-on-primary px-8 py-3 rounded-full font-label-md font-bold hover:bg-primary-fixed hover:scale-105 transition-all shadow-lg">Back to Home Page</a>
       </div>
     </div>
   </main>
@@ -42,5 +42,6 @@
   <script src="../js/chrome.js"></script>
   <script src="../js/titlebar.js"></script>
   <script type="module" src="../js/sidebar.js"></script>
+  <script src="../js/error_handler.js"></script>
 </body>
 </html>

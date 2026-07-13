@@ -5,9 +5,12 @@
  *    Python bridge (load_playlist) and renders its real tracks. The mood
  *    banner is dropped — a saved playlist isn't a fresh detection. This is
  *    where sidebar / home-showcase clicks land.
- * 2. Detection flow (no hash): themed placeholder content per
- *    sessionStorage.last_emotion (set by mood.js / loading.js), mirroring the
- *    Stitch prototypes. Replaced by the real generate_playlist wiring in F6.
+ * 2. Detection flow (no hash): the playlist generate_playlist produced,
+ *    stashed by loading.js in sessionStorage.current_playlist (+
+ *    playlist_emotion), rendered under the per-emotion mood banner. The
+ *    bookmark button persists it via save_playlist (name = emotion + saved-at
+ *    stamp) and refreshes the sidebar. Opened with no flow behind it, the
+ *    page heads home — there is nothing real to show.
  *
  * Free (non-Premium) accounts can't use the in-app Web Playback SDK, so this
  * page degrades gracefully for them: the play-whole-playlist controls are
@@ -25,65 +28,40 @@ import {
   isFreeUser,
   trackRow,
 } from "./playlists_ui.js";
+import { refreshSidebarPlaylists } from "./sidebar.js";
 
 // Page copy per emotion; accent/emoji/cover come from EMOTION_THEMES. The
-// placeholder tracks disappear with the F6 generate_playlist wiring.
+// metaLead gets the real "N songs, X min" appended at render time.
 const EMOTIONS = {
   happy: {
     heading: "You seem Happy!",
     subtitle: "We have customized a playlist to match this vibe.",
     title: "Happy Playlist",
-    meta: "Curated for your joyful moments • 24 songs, 1 hr 15 min",
-    tracks: [
-      ["Happy", "Pharrell Williams", "Despicable Me 2", "3:53"],
-      ["Walking On Sunshine", "Katrina & The Waves", "Walking on Sunshine", "3:58"],
-      ["Can't Stop the Feeling!", "Justin Timberlake", "Trolls", "3:56"],
-    ],
+    metaLead: "Curated for your joyful moments",
   },
   surprised: {
     heading: "You seem Surprised!",
     subtitle: "Unexpected drops, sudden tempo changes, and tracks that'll catch you off guard.",
     title: "Surprise Mix",
-    meta: "Curated for your wide-eyed state of mind • 24 songs, 1 hr 15 min",
-    tracks: [
-      ["Surprised", "Pharrell Williams", "Surprise Edition", "3:53"],
-      ["Midnight City", "M83", "Hurry Up, We're Dreaming", "4:03"],
-      ["Genesis", "Justice", "† (Cross)", "3:54"],
-    ],
+    metaLead: "Curated for your wide-eyed state of mind",
   },
   sad: {
     heading: "You seem Sad.",
     subtitle: "Embrace the melancholy. We've curated a collection of deeply emotional and reflective tracks to accompany your quiet moments.",
     title: "Sad Melodies",
-    meta: "Deeply emotional and reflective tracks • 18 songs, 1 hr 02 min",
-    tracks: [
-      ["Someone Like You", "Adele", "21", "4:45"],
-      ["Fix You", "Coldplay", "X&Y", "4:55"],
-      ["Yesterday", "The Beatles", "Help!", "2:05"],
-      ["The Night We Met", "Lord Huron", "Strange Trails", "3:28"],
-    ],
+    metaLead: "Deeply emotional and reflective tracks",
   },
   neutral: {
     heading: "You seem Neutral.",
     subtitle: "We have customized a playlist to match this vibe.",
     title: "Neutral Playlist",
-    meta: "A balanced, calm equilibrium to maintain your steady rhythm • 24 songs, 1 hr 15 min",
-    tracks: [
-      ["Weightless", "Marconi Union", "Weightless", "8:00"],
-      ["Gymnopédie No. 1", "Erik Satie", "3 Gymnopédies", "3:25"],
-      ["An Ending (Ascent)", "Brian Eno", "Apollo", "4:26"],
-    ],
+    metaLead: "A balanced, calm equilibrium to maintain your steady rhythm",
   },
   angry: {
     heading: "You seem Angry!",
     subtitle: "We have customized a playlist to match this vibe.",
     title: "Angry Playlist",
-    meta: "High-energy tracks for your intense moments • 24 songs, 1 hr 15 min",
-    tracks: [
-      ["Killing in the Name", "Rage Against the Machine", "Rage Against the Machine", "5:14"],
-      ["Break Stuff", "Limp Bizkit", "Significant Other", "2:46"],
-      ["Wait and Bleed", "Slipknot", "Slipknot", "2:27"],
-    ],
+    metaLead: "High-energy tracks for your intense moments",
   },
 };
 
@@ -125,8 +103,10 @@ function renderCover(accent, theme) {
 // ---- Mode 1: saved playlist (#playlist=<id>) --------------------------------
 
 async function renderSavedPlaylist(playlistId) {
-  // A saved playlist isn't a fresh detection: no mood banner.
+  // A saved playlist isn't a fresh detection: no mood banner, and the
+  // save-bookmark affordance makes no sense (it's already saved).
   document.getElementById("result-banner")?.remove();
+  document.getElementById("save-playlist-btn")?.remove();
   const free = isFreeUser();
   if (free) applyFreeMode();
 
@@ -164,12 +144,24 @@ async function renderSavedPlaylist(playlistId) {
   document.title = `EchoSoul - ${playlist.name}`;
 }
 
-// ---- Mode 2: detection flow (placeholder until F6) ---------------------------
+// ---- Mode 2: detection flow (playlist stashed by loading.js) ----------------
 
 function renderDetectionResult() {
-  const key = (sessionStorage.getItem("last_emotion") || "happy").toLowerCase();
-  const emotion = EMOTIONS[key] ? key : "happy";
-  const e = EMOTIONS[emotion];
+  const emotion = (sessionStorage.getItem("playlist_emotion") || "").toLowerCase();
+  const copy = EMOTIONS[emotion];
+  let tracks = null;
+  try {
+    tracks = JSON.parse(sessionStorage.getItem("current_playlist") || "null");
+  } catch {
+    tracks = null;
+  }
+  if (!copy || !Array.isArray(tracks) || !tracks.length) {
+    // No detection flow behind this visit (deep link / stale history):
+    // nothing real to show, so head home.
+    window.location.replace("home.html");
+    return;
+  }
+
   const theme = EMOTION_THEMES[emotion];
   const free = isFreeUser();
   if (free) applyFreeMode();
@@ -181,26 +173,84 @@ function renderDetectionResult() {
     `linear-gradient(to bottom, ${hexToRgba(theme.accent, 0.1)}, transparent)`;
   const emoji = document.getElementById("result-emoji");
   emoji.src = theme.emoji;
-  emoji.alt = e.heading;
+  emoji.alt = copy.heading;
   emoji.style.filter = `drop-shadow(0 0 18px ${hexToRgba(theme.accent, 0.45)})`;
   const heading = document.getElementById("result-heading");
-  heading.textContent = e.heading;
+  heading.textContent = copy.heading;
   heading.style.color = theme.accent;
-  document.getElementById("result-subtitle").textContent = e.subtitle;
+  document.getElementById("result-subtitle").textContent = copy.subtitle;
 
   renderCover(theme.accent, theme);
-  document.getElementById("playlist-title").textContent = e.title;
-  document.getElementById("playlist-meta").textContent = e.meta;
+  document.getElementById("playlist-title").textContent = copy.title;
+  const totalMs = tracks.reduce((sum, t) => sum + (t.duration_ms || 0), 0);
+  document.getElementById("playlist-meta").textContent =
+    `${copy.metaLead} • ${formatPlaylistMeta(tracks.length, totalMs)}`;
 
-  // Tracklist (placeholder tuples -> the shared row shape; no track_id yet, so
-  // Free clicks fall back to a Spotify search link).
   const list = document.getElementById("tracklist");
   list.innerHTML = "";
-  e.tracks.forEach(([title, artist, album, time], i) =>
-    list.appendChild(trackRow(i + 1, { title, artist, album, time }, theme.accent, free))
-  );
+  tracks.forEach((t, i) => list.appendChild(trackRow(i + 1, dbTrack(t), theme.accent, free)));
 
-  document.title = `EchoSoul - ${e.title}`;
+  wireSaveButton(emotion, tracks, theme.accent);
+
+  document.title = `EchoSoul - ${copy.title}`;
+}
+
+// ---- Save (bookmark button, fresh-detection view only) ----------------------
+
+// "happy" -> "Happy — Jul 12, 9:41 PM" (the sidebar list is flat, so the
+// stamp keeps repeat saves of the same mood tellable apart).
+function playlistSaveName(emotion) {
+  const stamp = new Date().toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${emotion[0].toUpperCase()}${emotion.slice(1)} — ${stamp}`;
+}
+
+function wireSaveButton(emotion, tracks, accent) {
+  const btn = document.getElementById("save-playlist-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      await callPy(
+        "save_playlist",
+        playlistSaveName(emotion),
+        emotion,
+        tracks.map((t) => t.track_id)
+      );
+    } catch (err) {
+      console.error("save_playlist failed:", err);
+      showToast("Couldn't save the playlist — please try again.");
+      btn.disabled = false;
+      return;
+    }
+    // Saved: fill the bookmark and keep the button disabled — saving the same
+    // playlist twice only clutters the sidebar. The new row appears live.
+    btn.querySelector(".material-symbols-outlined")?.classList.add("filled");
+    btn.style.color = accent;
+    btn.title = "Saved";
+    showToast("Playlist saved");
+    refreshSidebarPlaylists();
+  });
+}
+
+// Minimal transient toast (bottom-centre), the only save feedback beyond the
+// button state. PyWebView has no reliable alert(), hence DIY.
+function showToast(message) {
+  document.getElementById("app-toast")?.remove();
+  const toast = document.createElement("div");
+  toast.id = "app-toast";
+  toast.className =
+    "fixed bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full " +
+    "bg-surface-container-high border border-white/10 shadow-xl " +
+    "text-label-md font-label-md text-on-surface transition-opacity duration-300";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => (toast.style.opacity = "0"), 2200);
+  setTimeout(() => toast.remove(), 2600);
 }
 
 // Switching playlists from the sidebar while already on this page only changes

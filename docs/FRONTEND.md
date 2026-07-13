@@ -62,8 +62,8 @@ frontend/
     ├── titlebar.js         ✅ frameless-window controls (min/max/close + drag regions); loads after chrome.js
     ├── home.js             ✅ hero zoom + manual-mood / scan navigation + live "latest saved playlist" showcase
     ├── mood.js             ✅ mood-card selection → loading
-    ├── loading.js          ✅ auto-advance to result (inference wiring pending)
-    ├── result.js           ✅ per-emotion placeholder content + live saved-playlist view (#playlist=<id>)
+    ├── loading.js          ✅ the real flow: detect_emotion (camera) + generate_playlist → result / error
+    ├── result.js           ✅ real detection playlist + save button + live saved-playlist view (#playlist=<id>)
     ├── shader.js           ✅ optional WebGL "Vibe Canvas" background (opt-in)
     ├── bridge.js           ✅ callPy()/callPyWithTimeout(): pywebviewready wait + timeout
     ├── auth_gate.js        ✅ runs on index.html; routes to login / premium / home
@@ -73,7 +73,7 @@ frontend/
     ├── playlists_ui.js     ✅ shared tracklist-row / duration / emotion-theme helpers (home, result, sidebar)
     ├── camera.js           ✅ webcam preview + 2 Hz face guide (quick_face_check) + capture/retake/use (replaced photo.js)
     ├── playback.js         ⬜ Spotify SDK initialisation + playback control (replaces the placeholder bottom player rendered by chrome.js)
-    └── error_handler.js    ⬜ maps error codes to user-facing messages
+    └── error_handler.js    ✅ maps sessionStorage.error_code to the user-facing message on error.html
 ```
 
 ### Custom title bar (frameless window)
@@ -354,7 +354,7 @@ Two states, as-built in `js/camera.js` (which replaced the placeholder `photo.js
    `docs/IMAGE_PIPELINE.md`), freezes it in `#captured-preview`, and shows
    **Retake** / **Use this photo**. "Use" stashes the base64 payload in
    `sessionStorage.captured_image_b64` with `emotion_source = "camera"` and
-   navigates to `loading.html`, which runs `detect_emotion` (F6 wiring).
+   navigates to `loading.html`, which runs `detect_emotion`.
 
 Camera lifecycle: the stream stops on `pagehide` (the camera light never stays
 on after leaving the page) and before navigating to loading. If the camera
@@ -401,49 +401,46 @@ parameter — `loading.js` branches on `sessionStorage.emotion_source` alone.
 
 ### `loading.html`
 
-Shown briefly during model inference. Shows a rotating set of statuses based on a `?stage=` query parameter or via polling. Simplest: do the bridge work directly on this page, then navigate to result.
+The bridge work happens directly on this page (`js/loading.js`, a module), then
+it navigates to result or error. As-built flow:
 
-```javascript
-window.addEventListener("load", async () => {
-  const emotionSource = sessionStorage.getItem("emotion_source");
+- **Camera path** (`emotion_source === "camera"`): reads
+  `sessionStorage.captured_image_b64` and **removes it immediately** (consumed
+  either way — multi-MB of PNG must not outlive the one call that needs it),
+  then `callPy("detect_emotion", b64)`.
+  - `status === "out_of_scope"` → `error_code = "out_of_scope"`,
+    `detected_emotion = result.detected` → error.html.
+  - `status === "error"` → `error_code = result.error` (no_face,
+    multiple_faces, low_quality_*, decode_failed) → error.html.
+  - `status === "ok"` → `last_emotion = result.emotion`, continue.
+- **Manual path** (`"manual"`): the emotion is already in
+  `sessionStorage.last_emotion` (mood card / home chip); inference is skipped.
+- **Both**: `callPy("generate_playlist", emotion)` (backend default size, 25)
+  → `current_playlist` (JSON) + `playlist_emotion` → result.html. An empty
+  list maps to `error_code = "playlist_failed"`; a rejected bridge promise
+  (backend raised / timed out) maps to `"unexpected"`.
+- Landing here with no flow behind it (deep link, stale history) goes straight
+  home rather than erroring.
 
-  if (emotionSource === "manual") {
-    // Skip inference; emotion is already chosen
-    const emotion = sessionStorage.getItem("last_emotion");
-    await generatePlaylistAndGoToResult(emotion);
-    return;
-  }
+Two as-built details:
 
-  // Camera path: image was saved to sessionStorage by photo.html
-  const b64 = sessionStorage.getItem("captured_image_b64");
-  updateStatus("Detecting face…");
-  const result = await callPy("detect_emotion", b64);
+- **Every exit uses `location.replace`** — the page is transient and its
+  inputs are consumed on the way through, so the Back button must never
+  re-enter it (history after a camera run reads photo → result).
+- **Minimum display time** (~1.5 s from load to navigation): the manual path
+  is one fast DB query and the analyzing animation would otherwise flash for a
+  frame, which reads as a glitch.
+- **Staged progress bar** (`#loading-progress`, width + CSS transition): a
+  bridge call is one opaque await — no real percentage exists — so the fill
+  glides toward the running stage's cap (55% during `detect_emotion`, 90%
+  during `generate_playlist`, slower than any healthy call takes) and the
+  finishing fill to 100% is timed to land just before navigation, inside the
+  minimum-display window. Error exits leave the bar where it stopped. The
+  shimmer sweep (`.progress-bar-fill` in `app.css`) stays on top.
 
-  if (result.status === "error") {
-    sessionStorage.setItem("error_code", result.error);
-    window.location.assign("error.html");
-    return;
-  }
-  if (result.status === "out_of_scope") {
-    sessionStorage.setItem("error_code", "out_of_scope");
-    sessionStorage.setItem("detected_emotion", result.detected);
-    window.location.assign("error.html");
-    return;
-  }
-
-  sessionStorage.setItem("last_emotion", result.emotion);
-  sessionStorage.setItem("emotion_source", "camera");
-  await generatePlaylistAndGoToResult(result.emotion);
-});
-
-async function generatePlaylistAndGoToResult(emotion) {
-  updateStatus("Building your playlist…");
-  const playlist = await callPy("generate_playlist", emotion, 25);
-  sessionStorage.setItem("current_playlist", JSON.stringify(playlist));
-  sessionStorage.setItem("playlist_emotion", emotion);
-  window.location.assign("result.html");
-}
-```
+The status lines (`#loading-status` / `#loading-substatus`) switch from the
+static "Analyzing Emotion..." copy to "Building your playlist..." when
+inference is done.
 
 **sessionStorage caveat:** Spotify Playback SDK uses localStorage; we use sessionStorage for app state. PyWebView shares storage between pages within the same window. Confirm both work in early build verification.
 
@@ -463,29 +460,31 @@ async function generatePlaylistAndGoToResult(emotion) {
 └──────────┴─────────────────────────────────────────────┘
 ```
 
-```javascript
-window.addEventListener("load", () => {
-  const playlist = JSON.parse(sessionStorage.getItem("current_playlist"));
-  const emotion = sessionStorage.getItem("playlist_emotion");
-  renderHeader(emotion);
-  renderTrackList(playlist);
+As-built (detection view, `js/result.js`): reads `current_playlist` +
+`playlist_emotion` (stashed by loading.js). If either is missing or unusable
+(deep link, stale history) the page heads home — there is nothing real to
+show. Otherwise it themes the mood banner per emotion, renders the real
+tracks via the shared `playlists_ui.js` helpers, and computes the meta line
+(per-emotion flavour lead + real `formatPlaylistMeta` counts).
 
-  document.querySelector("#play-btn").addEventListener("click", () => {
-    const trackIds = playlist.map(t => t.track_id);
-    playPlaylist(trackIds);  // from playback.js
-  });
-  document.querySelector("#save-btn").addEventListener("click", async () => {
-    const name = `${capitalise(emotion)} — ${formatNow()}`;
-    await callPy("save_playlist", name, emotion, playlist.map(t => t.track_id));
-    showToast("Playlist saved");
-  });
-  document.querySelector("#edit-btn").addEventListener("click", () => {
-    enterEditMode();
-  });
-});
-```
+Buttons under the title:
 
-Edit mode allows the user to remove individual tracks before saving. Adds (searching for new tracks) is a stretch goal — defer if time-constrained.
+- **Save** (`#save-playlist-btn`, bookmark icon): calls
+  `save_playlist(name, emotion, track_ids)` with a name like
+  `Happy — Jul 12, 9:41 PM` (the timestamp keeps repeat saves of the same
+  mood tellable apart in the flat sidebar list). On success the bookmark
+  fills with the emotion accent, the button stays disabled (double-saving
+  only clutters the sidebar), a toast confirms, and
+  `refreshSidebarPlaylists()` (imported from `sidebar.js`) shows the new row
+  live. On failure the button re-enables with an error toast. The saved
+  view (`#playlist=<id>`) removes this button — it's already saved.
+- **Play-all** (`#playlist-play-btn`): wired by `playback.js` (F7); removed
+  in Free mode.
+- **Edit** (remove tracks before saving): deferred — `data-placeholder`
+  no-op for now. Adds (searching for new tracks) is a further stretch goal.
+
+Toasts are a DIY 10-liner in result.js (PyWebView has no reliable
+`alert()`): a fixed bottom-centre pill that fades after ~2 s.
 
 As-built addition — **saved-playlist view**: when the page is opened as
 `result.html#playlist=<id>` (sidebar rows, home showcase), `result.js` drops
@@ -500,7 +499,7 @@ change the hash re-render.
 
 ### `error.html`
 
-Shows a message keyed by `sessionStorage.error_code`:
+Shows a message keyed by `sessionStorage.error_code` (`js/error_handler.js`):
 
 ```javascript
 const ERROR_MESSAGES = {
@@ -509,21 +508,17 @@ const ERROR_MESSAGES = {
   low_quality_blur:  "The image is too blurry. Please hold the camera steady.",
   low_quality_dark:  "The image is too dark. Move to a brighter spot.",
   low_quality_bright:"The image is too bright. Reduce glare or move away from direct light.",
-  out_of_scope:      detected => `We detected ${detected}, which isn't supported for music recommendations. Try choosing your mood manually.`,
   decode_failed:     "Something went wrong reading the photo. Please try again.",
+  playlist_failed:   "We couldn't build a playlist just now. Please try again in a moment.",
+  out_of_scope:      detected => `We detected ${detected}, which isn't supported for music recommendations. Try choosing your mood manually.`,
 };
-
-const code = sessionStorage.getItem("error_code");
-const detected = sessionStorage.getItem("detected_emotion");
-const msg = typeof ERROR_MESSAGES[code] === "function"
-  ? ERROR_MESSAGES[code](detected)
-  : (ERROR_MESSAGES[code] || "An unexpected error occurred.");
-
-document.querySelector("#error-message").textContent = msg;
-document.querySelector("#back-btn").addEventListener("click", () => {
-  window.location.assign("home.html");
-});
+// Unknown codes (incl. "unexpected") fall back to
+// "An unexpected error occurred. Please try again."
 ```
+
+As-built details: the keys are read, not consumed, so refreshing the page
+keeps the message; opened with no `error_code` at all (design preview) the
+static prototype copy stays. "Back to Home Page" is a plain `<a href>`.
 
 ---
 

@@ -13,8 +13,8 @@
  *   3. Capture freezes the full-resolution frame as lossless PNG (JPEG
  *      artefacts could distort facial features — see the pipeline doc).
  *      "Use this photo" stashes it in sessionStorage.captured_image_b64 with
- *      emotion_source="camera" and advances to loading.html (which runs
- *      detect_emotion); "Retake" returns to the live preview.
+ *      emotion_source="camera" and advances to loading.html, which runs
+ *      detect_emotion (loading.js); "Retake" returns to the live preview.
  *
  * The stream is stopped on pagehide so the camera light never stays on after
  * leaving the page.
@@ -184,7 +184,7 @@ els.captureBtn.addEventListener("click", () => {
   els.guide.classList.add("hidden");
   els.captureBtn.classList.add("hidden");
   els.capturedActions.classList.remove("hidden");
-  setStatus("Happy with this photo?");
+  setStatus("Proceed with this photo?");
 });
 
 els.retakeBtn.addEventListener("click", () => {

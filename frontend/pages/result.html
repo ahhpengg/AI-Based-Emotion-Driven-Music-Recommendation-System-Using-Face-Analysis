@@ -54,9 +54,12 @@
             <span>Playback needs Premium — open any song in Spotify.</span>
           </p>
           <div class="flex items-center gap-4 mt-4">
-            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">bookmark</span></button>
+            <!-- Save: wired by result.js in the fresh-detection view; removed in the saved view. -->
+            <button id="save-playlist-btn" title="Save playlist" class="text-white hover:opacity-80 transition-opacity disabled:opacity-40"><span class="material-symbols-outlined text-[24px]">bookmark</span></button>
+            <!-- Play-all: Web Playback SDK wiring arrives with playback.js (F7). -->
             <button id="playlist-play-btn" class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">play_circle</span></button>
-            <button class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">edit</span></button>
+            <!-- Edit mode (remove tracks before saving) is deferred — see docs/FRONTEND.md. -->
+            <button data-placeholder class="text-white hover:opacity-80 transition-opacity"><span class="material-symbols-outlined text-[24px]">edit</span></button>
           </div>
         </div>
       </div>
