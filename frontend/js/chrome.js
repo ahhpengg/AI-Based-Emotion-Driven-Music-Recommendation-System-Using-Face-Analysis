@@ -15,14 +15,16 @@
  *   - <  lg: sidebar becomes an off-canvas drawer toggled by the header's
  *     hamburger, dimmed by a backdrop; content goes full width.
  *
- * PLACEHOLDER DATA: only the player's queue button is still static. The
- * sidebar playlist list is LIVE: this script renders the empty
- * #sidebar-playlists container and js/sidebar.js (a module loaded after this
- * script) fills it from the Python bridge (list_user_playlists). The header
- * search box is LIVE too: this script renders the input + empty dropdown and
- * js/search.js drives them (catalogue search, play, add-to-playlists). The
- * bottom player is rendered idle here and driven live by js/playback.js
- * (Spotify Web Playback SDK). See docs/FRONTEND.md.
+ * PLACEHOLDER DATA: only the player's queue button and the sidebar's Recents
+ * row are still static. The sidebar playlist list is LIVE: this script renders
+ * the empty #sidebar-playlists container and js/sidebar.js (a module loaded
+ * after this script) fills it from the Python bridge (list_user_playlists);
+ * the sidebar's + button (#sidebar-new-playlist) opens js/create_playlist.js's
+ * create-playlist modal. The header search box is LIVE too: this script
+ * renders the input + empty dropdown and js/search.js drives them (catalogue
+ * search, play, add-to-playlists). The bottom player is rendered idle here and
+ * driven live by js/playback.js (Spotify Web Playback SDK). See
+ * docs/FRONTEND.md.
  */
 (function () {
   "use strict";
@@ -54,8 +56,9 @@
   const showFooter = cfg.footer && !isFreeUser();
 
   // ---- Sidebar -------------------------------------------------------------
-  // The playlist list itself is filled by js/sidebar.js (live bridge data);
-  // the "new playlist" and search/Recents controls are still placeholders.
+  // The playlist list itself is filled by js/sidebar.js (live bridge data) and
+  // the "new playlist" + button is driven by js/create_playlist.js; the
+  // search/Recents control is still a placeholder.
   function sidebarHTML() {
     const scanBlock = cfg.scan
       ? `<div class="mt-auto pt-6 pb-28">
@@ -84,7 +87,7 @@
       <nav class="flex flex-col mt-4 flex-grow gap-[2px]">
         <div class="flex items-center justify-between mt-6 mb-2 pl-3 pr-1">
           <p class="text-label-sm font-label-sm text-outline-variant uppercase tracking-wider">Playlists</p>
-          <button data-placeholder aria-label="New playlist" class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-white/5 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">add</span></button>
+          <button id="sidebar-new-playlist" aria-label="New playlist" title="New playlist" class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-white/5 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">add</span></button>
         </div>
         <div data-placeholder class="flex items-center justify-between px-3 py-2 mb-2 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer">
           <span class="material-symbols-outlined text-[20px]">search</span>

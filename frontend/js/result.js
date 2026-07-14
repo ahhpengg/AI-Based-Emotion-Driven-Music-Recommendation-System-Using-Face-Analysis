@@ -33,6 +33,7 @@ import { callPy } from "./bridge.js";
 import { playTracks } from "./playback.js";
 import {
   DEFAULT_ACCENT,
+  EMOTION_DEFAULT_TITLES,
   EMOTION_THEMES,
   dbTrack,
   formatCreatedDate,
@@ -44,38 +45,39 @@ import {
 } from "./playlists_ui.js";
 import { refreshSidebarPlaylists } from "./sidebar.js";
 
-// Page copy per emotion; accent/emoji/cover come from EMOTION_THEMES. The
-// title/metaLead pair doubles as the default playlist name/description when
-// the user saves without editing.
+// Page copy per emotion; accent/emoji/cover come from EMOTION_THEMES and the
+// titles from the shared EMOTION_DEFAULT_TITLES (also the create-playlist
+// modal's prefill). The title/metaLead pair doubles as the default playlist
+// name/description when the user saves without editing.
 const EMOTIONS = {
   happy: {
     heading: "You seem Happy!",
     subtitle: "We have customized a playlist to match this vibe.",
-    title: "Happy Playlist",
+    title: EMOTION_DEFAULT_TITLES.happy,
     metaLead: "Curated for your joyful moments",
   },
   surprised: {
     heading: "You seem Surprised!",
     subtitle: "Unexpected drops, sudden tempo changes, and tracks that'll catch you off guard.",
-    title: "Surprise Mix",
+    title: EMOTION_DEFAULT_TITLES.surprised,
     metaLead: "Curated for your wide-eyed state of mind",
   },
   sad: {
     heading: "You seem Sad.",
     subtitle: "Embrace the melancholy. We've curated a collection of deeply emotional and reflective tracks to accompany your quiet moments.",
-    title: "Sad Melodies",
+    title: EMOTION_DEFAULT_TITLES.sad,
     metaLead: "Deeply emotional and reflective tracks",
   },
   neutral: {
     heading: "You seem Neutral.",
     subtitle: "We have customized a playlist to match this vibe.",
-    title: "Neutral Playlist",
+    title: EMOTION_DEFAULT_TITLES.neutral,
     metaLead: "A balanced, calm equilibrium to maintain your steady rhythm",
   },
   angry: {
     heading: "You seem Angry!",
     subtitle: "We have customized a playlist to match this vibe.",
-    title: "Angry Playlist",
+    title: EMOTION_DEFAULT_TITLES.angry,
     metaLead: "High-energy tracks for your intense moments",
   },
 };

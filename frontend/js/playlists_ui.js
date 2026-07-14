@@ -43,6 +43,17 @@ export const EMOTION_THEMES = {
 // Fallback accent for playlists without a source emotion (theme primary).
 export const DEFAULT_ACCENT = "#ddb7ff";
 
+// Default playlist title per emotion — the result page's playlist title (and
+// default save name) and the create-playlist modal's prefilled title, kept in
+// one place so the two flows never drift apart.
+export const EMOTION_DEFAULT_TITLES = {
+  happy: "Happy Songs",
+  surprised: "Surprise Mix",
+  sad: "Sad Melodies",
+  neutral: "Neutral Collection",
+  angry: "Angry Vibes",
+};
+
 // True when the signed-in Spotify account is Free. Absent profile (a page
 // opened directly in dev) is treated as Premium so the default UI is unchanged.
 export function isFreeUser() {
@@ -116,12 +127,14 @@ export async function openInSpotify(title, artist, trackId) {
 
 // Minimal transient toast (bottom-centre, above the player). PyWebView has no
 // reliable alert(), hence DIY. Shared by the save button and playback errors.
+// z-[70] keeps it above the z-[60] modal overlays (add-to-playlists popup,
+// create-playlist modal) — some toasts fire while those are still open.
 export function showToast(message) {
   document.getElementById("app-toast")?.remove();
   const toast = document.createElement("div");
   toast.id = "app-toast";
   toast.className =
-    "fixed bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full " +
+    "fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] px-5 py-2.5 rounded-full " +
     "bg-surface-container-high border border-white/10 shadow-xl " +
     "text-label-md font-label-md text-on-surface transition-opacity duration-300";
   toast.textContent = message;

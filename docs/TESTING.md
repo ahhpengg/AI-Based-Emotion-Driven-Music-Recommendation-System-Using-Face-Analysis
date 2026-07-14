@@ -280,6 +280,18 @@ Record failures inline as they happen; fix and re-run the failing pass before ti
 [ ] Kebab → delete: two-step confirm; deleting the playlist currently open on the result
     page routes home
 [ ] Home "Your latest playlist" showcase shows the newest save (first 5 tracks + view-all)
+[ ] Sidebar + button → emotion picker: Confirm disabled until a tile is picked; Cancel /
+    backdrop / Esc close it
+[ ] Builder: cover + accent match the chosen emotion; title prefilled ("Happy Playlist"),
+    description empty; Create disabled with no songs
+[ ] Builder search: results appear inline below the box; "Add" adds the song to the list
+    and locks to "Added"; row click previews the song (plays in-app on Premium)
+[ ] Remove (✕) a draft song → list renumbers; its search-result Add button unlocks;
+    removing the last song disables Create again
+[ ] While the builder holds a draft: header-search add-popup does NOT list the draft;
+    backdrop click / Esc do NOT close the builder (Cancel does, and discards it)
+[ ] Create → lands on the new playlist's page; sidebar shows it; description empty unless
+    typed; emptied title fell back to the per-emotion default
 [ ] Restart the app: saved playlists still listed
 ```
 

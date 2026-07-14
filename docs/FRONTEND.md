@@ -73,6 +73,8 @@ frontend/
     ├── playlists_ui.js     ✅ shared tracklist-row / duration / emotion-theme / toast helpers (home, result, sidebar, playback)
     ├── camera.js           ✅ webcam preview + 2 Hz face guide (quick_face_check) + capture/retake/use (replaced photo.js)
     ├── playback.js         ✅ Spotify Web Playback SDK: drives the bottom player, resumes the session across page navigations, exports playTracks() for result.js
+    ├── search.js           ✅ header search: as-you-type catalogue search dropdown + play + add-to-playlists popup
+    ├── create_playlist.js  ✅ sidebar + button: two-step create-playlist modal (emotion picker → in-memory builder → save_playlist)
     └── error_handler.js    ✅ maps sessionStorage.error_code to the user-facing message on error.html
 ```
 
@@ -130,7 +132,9 @@ page. They are now defined **once** in `js/chrome.js` and injected per page.
   player's queue button, the sidebar's Recents row) carry `data-placeholder`
   and are no-ops for now. The bottom player itself is rendered idle here and
   driven live by `js/playback.js`; the header search box is rendered here and
-  driven live by `js/search.js` (see *Header search* below).
+  driven live by `js/search.js` (see *Header search* below); the sidebar's +
+  button opens the create-playlist modal (`js/create_playlist.js`, see *Create
+  playlist modal* below).
 - **Responsive:** at `lg` (≥1024px) the layout is the fixed 280px sidebar + main
   canvas. Below `lg` the sidebar becomes an off-canvas drawer toggled by the
   header hamburger (with a dimming backdrop), the main column goes full width
@@ -562,6 +566,8 @@ As-built: `chrome.js` renders the sidebar shell with an empty
 `#sidebar-playlists` container on every chrome page; `js/sidebar.js` (a module
 loaded right after `chrome.js`/`titlebar.js` on all six pages) fills it from
 `list_user_playlists` on every page load (cheap query, newest-updated first).
+The **+** button beside the "Playlists" label (`#sidebar-new-playlist`) opens
+the create-playlist modal (see *Create playlist modal* below).
 
 Each row shows the emotion emoji (from `playlists_ui.js`'s `EMOTION_THEMES`;
 `music_note` for user-created playlists without a source emotion), the name and
@@ -618,6 +624,40 @@ there.
   on the result page — a delayed `location.reload()` so its tracklist (and any
   later edit's working copy) isn't stale. No saved playlists → the popup says
   so and Confirm stays disabled.
+
+### Create playlist modal (js/create_playlist.js)
+
+The sidebar's **+** button opens a two-step modal for building a playlist from
+scratch (the module is loaded on all six chrome pages, photo included):
+
+1. **Emotion picker** — the five supported emotions as selectable tiles; the
+   choice sets the cover art, accent and default title. Confirm moves to step
+   2; Cancel / backdrop click / Esc simply close (nothing to lose yet).
+2. **Builder** — emotion cover + title input (prefilled with the shared
+   per-emotion default, `playlists_ui.js`'s `EMOTION_DEFAULT_TITLES`; emptied
+   ⇒ falls back to that default on create) + description textarea (defaults to
+   **empty** — a user-built playlist inherits no generated tagline; blank is
+   stored as NULL), then a search box with the same `search_tracks` query /
+   250 ms debounce / stale-response guard as the header bar but rendering its
+   results **inline below the box** instead of a dropdown. Each result row
+   carries an explicit **"Add"** text button (deliberately not the header
+   search's `playlist_add` icon, which opens a different popup); a song
+   already in the draft shows a locked "Added" state (also the duplicate
+   guard — `save_playlist` fails loud on duplicates). Row clicks preview the
+   song exactly like the header search (Premium plays in-app, Free opens it in
+   Spotify; the photo page has no bottom player/SDK device, so Premium falls
+   back to opening in Spotify there too). Below, the added songs are a
+   removable list (✕ per row, positions renumber); **Create** stays disabled
+   until the draft has at least one song.
+
+The draft lives **only in the module's memory** until Create calls
+`save_playlist(name, emotion, track_ids, description)` — a half-built playlist
+is invisible to `list_user_playlists`, so the header search's add-to-playlists
+popup cannot add songs into it mid-build. Cancel (or navigating away) discards
+the draft; step 2 ignores backdrop clicks and Esc so a stray click can't lose
+it. On success the modal navigates to `result.html#playlist=<id>` (the
+saved-playlist view) — that navigation (or `result.js`'s hashchange reload
+when already on the result page) re-renders the sidebar with the new playlist.
 
 ---
 
