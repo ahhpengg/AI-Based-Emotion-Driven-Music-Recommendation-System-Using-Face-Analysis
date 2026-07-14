@@ -68,6 +68,20 @@ def test_load_missing_returns_none():
     assert playlists.load_playlist(2_000_000_000) is None
 
 
+def test_description_roundtrip(track_ids, cleanup):
+    playlist_id = playlists.save_playlist(
+        "Test Desc", track_ids, "happy", description="Curated for your joyful moments"
+    )
+    cleanup.append(playlist_id)
+    assert playlists.load_playlist(playlist_id)["description"] == "Curated for your joyful moments"
+
+
+def test_description_defaults_to_none(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Test No Desc", track_ids)
+    cleanup.append(playlist_id)
+    assert playlists.load_playlist(playlist_id)["description"] is None
+
+
 def test_timestamps_are_iso_strings(track_ids, cleanup):
     playlist_id = playlists.save_playlist("Test TS", track_ids)
     cleanup.append(playlist_id)
@@ -94,7 +108,40 @@ def test_list_includes_saved_with_track_count(track_ids, cleanup):
     )
     assert match is not None
     assert match["track_count"] == len(track_ids)
+    assert isinstance(match["created_at"], str)  # sidebar subtitle date
     assert isinstance(match["updated_at"], str)
+
+
+def test_update_replaces_header_and_tracks(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Before", track_ids, "happy", description="old")
+    cleanup.append(playlist_id)
+
+    # Drop the second track: positions must repack to a gapless 0-based run.
+    kept = [track_ids[0], track_ids[2], track_ids[3]]
+    assert playlists.update_playlist(playlist_id, "After", kept, description="new") is True
+
+    loaded = playlists.load_playlist(playlist_id)
+    assert loaded["name"] == "After"
+    assert loaded["description"] == "new"
+    assert [t["track_id"] for t in loaded["tracks"]] == kept
+    assert [t["position"] for t in loaded["tracks"]] == [0, 1, 2]
+
+
+def test_update_clears_description_with_none(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Test Clear", track_ids, description="something")
+    cleanup.append(playlist_id)
+    assert playlists.update_playlist(playlist_id, "Test Clear", track_ids, description=None)
+    assert playlists.load_playlist(playlist_id)["description"] is None
+
+
+def test_update_with_identical_values_still_true(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Same", track_ids, description="same")
+    cleanup.append(playlist_id)
+    assert playlists.update_playlist(playlist_id, "Same", track_ids, description="same") is True
+
+
+def test_update_missing_returns_false():
+    assert playlists.update_playlist(2_000_000_000, "Nope", []) is False
 
 
 def test_rename_changes_name(track_ids, cleanup):

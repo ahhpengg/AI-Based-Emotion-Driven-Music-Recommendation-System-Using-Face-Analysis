@@ -217,6 +217,7 @@ User-saved playlists. Both system-generated (from emotion detection) and user-cr
 CREATE TABLE playlist (
     playlist_id    INT          NOT NULL AUTO_INCREMENT,
     name           VARCHAR(200) NOT NULL,
+    description    VARCHAR(500) DEFAULT NULL,   -- user-editable; NULL = no description (migration 0005)
     source_emotion VARCHAR(20)  DEFAULT NULL,   -- which emotion produced this playlist; NULL for user-created
     created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -228,7 +229,7 @@ CREATE TABLE playlist (
 
 ### Naming convention
 
-System-generated playlists default to a name like `"Happy — 2026-05-14 14:30"`. The user can rename.
+System-generated playlists default to the result page's per-emotion title (`"Happy Playlist"`, `"Sad Melodies"`, …) with the per-emotion tagline as the default description. There is **no date stamp in the name** — the created date is shown from `created_at` (sidebar subtitle `"25 songs · Jul 12"`, and a `"Created Jul 12"` meta line on the playlist page). The user can edit name and description from the result page (`update_playlist`), which also replaces the track list in the same transaction and bumps `updated_at` explicitly (a tracks-only edit must still float the playlist to the top of the sidebar).
 
 ---
 
@@ -293,6 +294,7 @@ src/db/migrations/
 ├── 0002_emotion_mapping_seed.sql
 ├── 0003_indexes.sql
 ├── 0004_sample_key.sql
+├── 0005_playlist_description.sql
 └── …
 ```
 
@@ -348,7 +350,7 @@ The recommender then randomly samples N tracks from this 1000-row candidate pool
 ### Save a generated playlist
 
 ```sql
-INSERT INTO playlist (name, source_emotion) VALUES (?, ?);
+INSERT INTO playlist (name, description, source_emotion) VALUES (?, ?, ?);
 -- Use the returned LAST_INSERT_ID() for the bulk insert below:
 INSERT INTO playlist_song (playlist_id, track_id, position) VALUES
     (?, ?, 0), (?, ?, 1), (?, ?, 2), ...;

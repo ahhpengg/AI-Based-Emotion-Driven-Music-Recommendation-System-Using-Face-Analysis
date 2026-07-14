@@ -126,6 +126,10 @@ function fail(code, detected) {
     }
     sessionStorage.setItem("current_playlist", JSON.stringify(playlist));
     sessionStorage.setItem("playlist_emotion", emotion);
+    // A fresh playlist starts from the per-emotion defaults: drop any title /
+    // description the user customised on a previous run this session.
+    sessionStorage.removeItem("playlist_title");
+    sessionStorage.removeItem("playlist_description");
     await finishAndLeave("result.html");
   } catch (err) {
     // Unexpected bridge failure (backend raised, timed out, DB down, ...).

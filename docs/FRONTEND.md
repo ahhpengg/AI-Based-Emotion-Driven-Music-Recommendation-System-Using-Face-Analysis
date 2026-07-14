@@ -464,28 +464,49 @@ inference is done.
 As-built (detection view, `js/result.js`): reads `current_playlist` +
 `playlist_emotion` (stashed by loading.js). If either is missing or unusable
 (deep link, stale history) the page heads home — there is nothing real to
-show. Otherwise it themes the mood banner per emotion, renders the real
-tracks via the shared `playlists_ui.js` helpers, and computes the meta line
-(per-emotion flavour lead + real `formatPlaylistMeta` counts).
+show. Otherwise it themes the mood banner per emotion and renders the real
+tracks via the shared `playlists_ui.js` helpers. The header is title +
+description + meta line: the title defaults to the per-emotion page title
+("Happy Playlist"), the description (`#playlist-description`, hidden when
+empty) defaults to the per-emotion tagline ("Curated for your joyful
+moments"), and the meta line is the real `formatPlaylistMeta` counts plus
+`· Created Jul 12` once the playlist is saved (saved view: always). User
+customisations live in `sessionStorage.playlist_title` /
+`playlist_description` (loading.js clears both when a new flow starts; a
+stored *empty* description means "cleared on purpose", so it doesn't
+re-default).
 
 Buttons under the title:
 
 - **Save** (`#save-playlist-btn`, bookmark icon): calls
-  `save_playlist(name, emotion, track_ids)` with a name like
-  `Happy — Jul 12, 9:41 PM` (the timestamp keeps repeat saves of the same
-  mood tellable apart in the flat sidebar list). On success the bookmark
-  fills with the emotion accent, the button stays disabled (double-saving
-  only clutters the sidebar), a toast confirms, and
-  `refreshSidebarPlaylists()` (imported from `sidebar.js`) shows the new row
-  live. On failure the button re-enables with an error toast. The saved
-  view (`#playlist=<id>`) removes this button — it's already saved.
+  `save_playlist(name, emotion, track_ids, description)` with the current
+  (default or user-edited) title and description — **no date stamp in the
+  name**; repeat saves of the same mood are tellable apart by the created
+  date in the sidebar subtitle. On success the bookmark fills with the
+  emotion accent, the button stays disabled (double-saving only clutters the
+  sidebar), a toast confirms, `refreshSidebarPlaylists()` (imported from
+  `sidebar.js`) shows the new row live, and the returned `playlist_id` is
+  kept so later edits on the same page update the saved copy. On failure the
+  button re-enables with an error toast. The saved view (`#playlist=<id>`)
+  removes this button — it's already saved.
 - **Play-all** (`#playlist-play-btn`, and the cover's hover overlay): starts
   the whole list on the in-app SDK device via `playTracks(trackIds, 0)`
   (imported from `playback.js`). Clicking a **track row** starts the list *at
   that track*, so prev/next on the bottom player walk the playlist. Failures
   surface as a toast. All of it removed in Free mode.
-- **Edit** (remove tracks before saving): deferred — `data-placeholder`
-  no-op for now. Adds (searching for new tracks) is a further stretch goal.
+- **Edit** (`#edit-playlist-btn`, pencil icon — both views, Free mode too):
+  switches the header into **inline edit mode**: the title and description
+  swap to an underline input / textarea in place, the action row is replaced
+  by Done/Cancel, and the tracklist re-renders with a remove (X) button per
+  row (inert rows — no play/open handlers while editing; the X disables at
+  one remaining track, a playlist keeps at least one song). Nothing applies
+  until **Done**: fresh view updates the sessionStorage state (so the
+  bookmark save persists the customised version); any view backed by a DB
+  row (saved view, or fresh-after-save) persists via
+  `update_playlist(playlist_id, name, description, track_ids)` — a full
+  replace, so removals repack positions — then refreshes the sidebar.
+  `update_playlist` returning false (deleted from the sidebar mid-edit)
+  routes home. Cancel discards. Adding tracks (search) stays a stretch goal.
 
 Toasts are a DIY 10-liner shared from playlists_ui.js (PyWebView has no reliable
 `alert()`): a fixed bottom-centre pill that fades after ~2 s.
@@ -493,13 +514,15 @@ Toasts are a DIY 10-liner shared from playlists_ui.js (PyWebView has no reliable
 As-built addition — **saved-playlist view**: when the page is opened as
 `result.html#playlist=<id>` (sidebar rows, home showcase), `result.js` drops
 the mood banner (a saved playlist isn't a fresh detection) and renders the
-stored playlist from `load_playlist`: real tracks, a computed
-songs-and-duration meta line, and the per-emotion accent (theme primary for
-user-created playlists with no source emotion). Free accounts get the same
-degradation as the detection view — no play-all affordances, each track opens
-in Spotify via its real `track_id`. A deleted/unknown id shows "Playlist not
-found". The page reloads itself on `hashchange` so sidebar clicks that only
-change the hash re-render.
+stored playlist from `load_playlist`: real tracks, the stored description
+(hidden if none), a songs-and-duration meta line ending in
+`· Created Jul 12`, and the per-emotion accent (theme primary for
+user-created playlists with no source emotion). The edit button works here
+too (persists via `update_playlist`). Free accounts get the same degradation
+as the detection view — no play-all affordances, each track opens in Spotify
+via its real `track_id`. A deleted/unknown id shows "Playlist not found".
+The page reloads itself on `hashchange` so sidebar clicks that only change
+the hash re-render.
 
 ### `error.html`
 
@@ -535,7 +558,8 @@ loaded right after `chrome.js`/`titlebar.js` on all six pages) fills it from
 
 Each row shows the emotion emoji (from `playlists_ui.js`'s `EMOTION_THEMES`;
 `music_note` for user-created playlists without a source emotion), the name and
-the song count. Interactions:
+a `25 songs · Jul 12` subtitle (`formatCreatedDate` on the row's `created_at`;
+the year is appended once it differs from the current one). Interactions:
 
 - **Click** → opens `result.html#playlist=<id>` (the saved-playlist view). The
   row of the playlist currently open on the result page is highlighted.

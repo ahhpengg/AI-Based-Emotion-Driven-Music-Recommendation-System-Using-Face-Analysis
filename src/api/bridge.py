@@ -280,18 +280,47 @@ class BridgeApi:
             raise ValueError(f"Playlist size must be >= 1, got {size}")
         return recommender.generate_playlist(emotion, size=size)
 
-    def save_playlist(self, name: str, emotion: str | None, track_ids: list[str]) -> int:
+    def save_playlist(
+        self,
+        name: str,
+        emotion: str | None,
+        track_ids: list[str],
+        description: str | None = None,
+    ) -> int:
         """Persist a playlist and its ordered tracks; returns the new playlist_id.
 
         ``emotion`` is the detection that produced the playlist, or None for a
-        user-created one.
+        user-created one. A blank ``description`` is stored as NULL.
         """
         name = name.strip()
         if not name:
             raise ValueError("Playlist name must not be empty")
         if emotion is not None and emotion not in recommender.SUPPORTED_EMOTIONS:
             raise ValueError(f"Unsupported emotion: {emotion!r}")
-        return playlists.save_playlist(name, list(track_ids), source_emotion=emotion)
+        description = (description or "").strip() or None
+        return playlists.save_playlist(
+            name, list(track_ids), source_emotion=emotion, description=description
+        )
+
+    def update_playlist(
+        self,
+        playlist_id: int,
+        name: str,
+        description: str | None,
+        track_ids: list[str],
+    ) -> bool:
+        """Replace a saved playlist's name, description and tracks (result-page edit).
+
+        A blank ``description`` clears it. Returns False if the playlist no
+        longer exists (deleted from the sidebar mid-edit).
+        """
+        name = name.strip()
+        if not name:
+            raise ValueError("Playlist name must not be empty")
+        description = (description or "").strip() or None
+        return playlists.update_playlist(
+            int(playlist_id), name, list(track_ids), description=description
+        )
 
     def list_user_playlists(self) -> list[dict]:
         """Saved playlists for the sidebar, newest-updated first."""

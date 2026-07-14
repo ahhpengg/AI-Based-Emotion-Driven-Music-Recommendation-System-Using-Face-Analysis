@@ -181,24 +181,126 @@ Marked `@pytest.mark.integration`; run with `pytest -m integration`.
 A quick checklist the developer runs locally before pushing significant changes. Takes ~5 minutes.
 
 ```
-[ ] App starts: `python -m src.main` opens the window without errors
-[ ] First-run: shown login screen
-[ ] Click "Login with Spotify": browser opens, OAuth completes, returns to app
-[ ] Premium check passes (or correctly blocks free accounts)
-[ ] Home screen renders, sidebar visible
-[ ] Click "Take Photo": webcam preview appears with face guide
-[ ] Guide turns green when one face visible
-[ ] Capture: loading screen → result page with 25 tracks
-[ ] Click play on a track: audio plays
-[ ] Save the playlist: appears in sidebar
-[ ] Refresh: saved playlist still in sidebar
-[ ] Navigate to mood page: 5 emotion buttons visible
-[ ] Click "Happy": result page with 25 happy tracks (different from camera flow due to randomness)
-[ ] Click delete on a saved playlist: gone from sidebar
-[ ] Logout: returns to login screen
+[ ] App starts: `python -m src.main` opens the frameless window without errors
+[ ] Auth gate: cached session → home directly; no session → login page
+[ ] Home renders: sidebar, profile chip, latest-playlist showcase (if any saved)
+[ ] Click "Take Photo": webcam preview appears with the oval face guide
+[ ] Guide turns green with exactly one face visible; shutter enables
+[ ] Capture → "Use this photo": loading screen → result page with 25 tracks
+[ ] Play-all: audio plays in the bottom player (Premium account)
+[ ] Save the playlist: toast shown, row appears in sidebar immediately
+[ ] Mood page: 5 emotion cards; pick one → result page with 25 tracks
+[ ] Sidebar kebab → delete a saved playlist: two-step confirm, row gone
+[ ] Log out via the profile chip: returns to login page
 ```
 
 If any step fails, fix before pushing.
+
+---
+
+## F9 — Track F exit checklist (full manual UI test)
+
+> **Executed 2026-07-14 — all 7 passes passed, no unexpected errors.** Bonus coverage: a
+> real mid-session Wi-Fi drop recovered into the same session after reconnect (transient
+> `SpotifyNetworkError`, refresh token preserved). Unit suite green at 131 tests.
+
+Run once at the end of Track F (all pages wired to the real backend) and again as the
+regression baseline entering Phase 4. Unlike the smoke test above, this covers every
+degradation path. Needs: the owner's Premium account, one **allowlisted Free** account
+(dev-mode allowlist — see `docs/SPOTIFY_INTEGRATION.md`), a webcam, and internet.
+
+Record failures inline as they happen; fix and re-run the failing pass before ticking it.
+
+### Pass 1 — Cold start & auth round-trips
+
+```
+[ ] Cold start with a cached session: window opens ≤ 10 s, auth gate lands on home
+[ ] Log out (profile chip → Log out) → login page
+[ ] Relaunch the app after logout → login page (keyring session really cleared)
+[ ] "Login with Spotify" → system browser opens → authorize → branded callback page →
+    app proceeds to home (Premium account)
+[ ] Deny/cancel authorization in the browser → app returns to login with an error notice,
+    retry works
+```
+
+### Pass 2 — Camera → emotion → playlist E2E
+
+```
+[ ] Photo page: webcam preview appears (mirrored selfie view)
+[ ] No face in frame: guide red, status line explains, shutter disabled
+[ ] Two faces (e.g. hold a photo next to your face): guide red, shutter disabled
+[ ] Exactly one face: guide green, shutter enables within ~1 s
+[ ] Capture: frame freezes (unmirrored capture is expected), Retake / "Use this photo" shown
+[ ] Retake → live preview returns
+[ ] "Use this photo" → loading page (progress bar animates) → result page: emotion banner
+    matches your expression + 25 tracks (try happy, then neutral)
+[ ] Back (Alt+Left / mouse back) from result → photo page, never the loading page
+[ ] Very dark frame (cover the lens): capture → error page with the dark-image message →
+    back-to-home works
+[ ] Best effort: pull an exaggerated disgust/fear face → if predicted, out-of-scope error
+    page names the detected emotion
+[ ] Camera unavailable (deny permission or camera held by another app): reason shown +
+    "Try camera again" recovers after freeing the camera
+```
+
+### Pass 3 — Manual mood path
+
+```
+[ ] Mood page shows 5 cards: HAPPY / SURPRISED / SAD / ANGRY / NEUTRAL
+[ ] Pick "Sad" → loading (no camera involved) → result with sad-appropriate tracks
+[ ] Home quick-pick chips do the same
+```
+
+### Pass 4 — Playback (Premium)
+
+```
+[ ] Play-all from result: audio starts in the app; player shows title / artists / album art
+[ ] Clicking a track row starts the queue at that track
+[ ] Pause / resume, next / previous, seek (click the waveform), shuffle all work
+[ ] Volume slider + mute; volume setting survives page changes
+[ ] Navigate result → home while playing: playback resumes after a sub-second gap
+[ ] Pause, then navigate: new page shows paused state; resume works
+[ ] Pages with nothing playing show the idle player (no errors)
+```
+
+### Pass 5 — Playlists
+
+```
+[ ] Save from result: playlist named with the per-emotion default ("Happy Playlist") and
+    default description; toast; bookmark icon fills; save button stays disabled; sidebar
+    row appears without a reload, subtitle "25 songs · <today's date>"
+[ ] Edit on fresh result BEFORE saving: change title + description, remove a track →
+    header updates; then Save → sidebar row shows the custom title
+[ ] Edit AFTER saving (same page): Done persists — reopen from sidebar, changes are there
+[ ] Sidebar row click → saved-playlist view on result (no mood banner; description +
+    "Created <date>" meta line shown)
+[ ] Edit on saved view: rename, edit description, remove tracks → Done; sidebar updates
+    live; remove buttons disable at one remaining track; Cancel discards changes
+[ ] Kebab → rename inline; new name still there after navigating away and back
+[ ] Kebab → delete: two-step confirm; deleting the playlist currently open on the result
+    page routes home
+[ ] Home "Your latest playlist" showcase shows the newest save (first 5 tracks + view-all)
+[ ] Restart the app: saved playlists still listed
+```
+
+### Pass 6 — Free-mode degradation (allowlisted Free account)
+
+```
+[ ] Log out, log in with the Free account → premium-required page (soft gate)
+[ ] "Continue without playback" → home; bottom player hidden on every page
+[ ] Result page: no play-all button; each row opens the track on open.spotify.com in the
+    system browser
+[ ] Save / rename / delete playlists still work in Free mode
+[ ] Profile chip shows the Free badge
+```
+
+### Pass 7 — Window chrome
+
+```
+[ ] Minimize / maximize / close buttons work; double-click on the title bar toggles maximize
+[ ] Window drags by the header spare space; edges/corners resize; min-size clamp holds
+[ ] Taskbar shows the EchoSoul icon (not the Python icon)
+```
 
 ---
 

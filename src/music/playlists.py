@@ -1,4 +1,4 @@
-"""Playlist persistence: save, load, list, rename, delete.
+"""Playlist persistence: save, load, list, update, rename, delete.
 
 CRUD over the ``playlist`` and ``playlist_song`` tables (docs/DATABASE.md).
 Playlists are both system-generated (from an emotion detection) and
@@ -13,8 +13,8 @@ from datetime import datetime
 from src.db import connection
 
 _INSERT_PLAYLIST_SQL = """
-    INSERT INTO playlist (name, source_emotion)
-    VALUES (%s, %s)
+    INSERT INTO playlist (name, description, source_emotion)
+    VALUES (%s, %s, %s)
 """
 
 _INSERT_SONG_SQL = """
@@ -23,7 +23,7 @@ _INSERT_SONG_SQL = """
 """
 
 _SELECT_HEADER_SQL = """
-    SELECT playlist_id, name, source_emotion, created_at, updated_at
+    SELECT playlist_id, name, description, source_emotion, created_at, updated_at
     FROM playlist
     WHERE playlist_id = %s
 """
@@ -38,12 +38,18 @@ _SELECT_SONGS_SQL = """
 """
 
 _LIST_SQL = """
-    SELECT playlist_id, name, source_emotion, updated_at,
+    SELECT playlist_id, name, source_emotion, created_at, updated_at,
            (SELECT COUNT(*) FROM playlist_song WHERE playlist_id = p.playlist_id)
                AS track_count
     FROM playlist p
     ORDER BY updated_at DESC
     LIMIT %s
+"""
+
+_UPDATE_PLAYLIST_SQL = """
+    UPDATE playlist
+    SET name = %s, description = %s, updated_at = CURRENT_TIMESTAMP
+    WHERE playlist_id = %s
 """
 
 
@@ -56,6 +62,7 @@ def save_playlist(
     name: str,
     track_ids: list[str],
     source_emotion: str | None = None,
+    description: str | None = None,
 ) -> int:
     """Create a playlist and its ordered songs in a single transaction.
 
@@ -65,12 +72,13 @@ def save_playlist(
                         0-based ``position``). May be empty.
         source_emotion: The emotion that produced this playlist, or None for a
                         user-created one.
+        description:    Optional user-facing description, or None for none.
 
     Returns the new ``playlist_id``. Any duplicate track in ``track_ids`` or a
     track absent from the catalogue aborts the whole save (fail loud).
     """
     with connection.get_cursor(commit=True) as cur:
-        cur.execute(_INSERT_PLAYLIST_SQL, (name, source_emotion))
+        cur.execute(_INSERT_PLAYLIST_SQL, (name, description, source_emotion))
         playlist_id = cur.lastrowid
         if track_ids:
             rows = [
@@ -78,6 +86,35 @@ def save_playlist(
             ]
             cur.executemany(_INSERT_SONG_SQL, rows)
     return playlist_id
+
+
+def update_playlist(
+    playlist_id: int,
+    name: str,
+    track_ids: list[str],
+    description: str | None = None,
+) -> bool:
+    """Replace a playlist's name, description and track list in one transaction.
+
+    The songs are fully replaced (delete + re-insert), so removals repack the
+    0-based ``position`` automatically. ``updated_at`` is bumped explicitly so
+    a tracks-only edit still floats the playlist to the top of the sidebar.
+
+    Returns False if the playlist does not exist, True otherwise — even when
+    the submitted values are identical to what is stored.
+    """
+    with connection.get_cursor(commit=True) as cur:
+        cur.execute("SELECT 1 FROM playlist WHERE playlist_id = %s", (playlist_id,))
+        if cur.fetchone() is None:
+            return False
+        cur.execute(_UPDATE_PLAYLIST_SQL, (name, description, playlist_id))
+        cur.execute("DELETE FROM playlist_song WHERE playlist_id = %s", (playlist_id,))
+        if track_ids:
+            rows = [
+                (playlist_id, track_id, position) for position, track_id in enumerate(track_ids)
+            ]
+            cur.executemany(_INSERT_SONG_SQL, rows)
+    return True
 
 
 def load_playlist(playlist_id: int) -> dict | None:
@@ -98,10 +135,12 @@ def load_playlist(playlist_id: int) -> dict | None:
 def list_playlists(limit: int = 50) -> list[dict]:
     """Return playlists for the sidebar, newest-updated first.
 
-    Each row carries ``track_count`` and an ISO-string ``updated_at``.
+    Each row carries ``track_count`` and ISO-string timestamps (``created_at``
+    feeds the sidebar's "N songs · Jul 12" subtitle).
     """
     rows = connection.fetchall(_LIST_SQL, (limit,))
     for row in rows:
+        row["created_at"] = _iso(row["created_at"])
         row["updated_at"] = _iso(row["updated_at"])
     return rows
 

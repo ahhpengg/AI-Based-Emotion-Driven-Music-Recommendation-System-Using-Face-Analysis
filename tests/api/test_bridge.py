@@ -178,22 +178,42 @@ def test_generate_playlist_coerces_js_number_size(monkeypatch, api):
 def test_save_playlist_delegates_and_returns_id(monkeypatch, api):
     seen = {}
 
-    def _fake_save(name, track_ids, source_emotion):
-        seen.update(name=name, track_ids=track_ids, source_emotion=source_emotion)
+    def _fake_save(name, track_ids, source_emotion, description):
+        seen.update(
+            name=name, track_ids=track_ids, source_emotion=source_emotion, description=description
+        )
         return 7
 
     monkeypatch.setattr(bridge_module.playlists, "save_playlist", _fake_save)
-    assert api.save_playlist("Happy — today", "happy", ["t1", "t2"]) == 7
-    assert seen == {"name": "Happy — today", "track_ids": ["t1", "t2"], "source_emotion": "happy"}
+    assert api.save_playlist("Happy Playlist", "happy", ["t1", "t2"], "Joyful moments") == 7
+    assert seen == {
+        "name": "Happy Playlist",
+        "track_ids": ["t1", "t2"],
+        "source_emotion": "happy",
+        "description": "Joyful moments",
+    }
 
 
 def test_save_playlist_allows_user_created_without_emotion(monkeypatch, api):
     monkeypatch.setattr(
         bridge_module.playlists,
         "save_playlist",
-        lambda name, track_ids, source_emotion: 1,
+        lambda name, track_ids, source_emotion, description: 1,
     )
     assert api.save_playlist("My mix", None, []) == 1
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_save_playlist_normalises_blank_description_to_none(monkeypatch, api, blank):
+    seen = {}
+
+    def _fake_save(name, track_ids, source_emotion, description):
+        seen["description"] = description
+        return 1
+
+    monkeypatch.setattr(bridge_module.playlists, "save_playlist", _fake_save)
+    api.save_playlist("Mix", "happy", ["t1"], blank)
+    assert seen["description"] is None
 
 
 @pytest.mark.parametrize("bad_name", ["", "   "])
@@ -210,6 +230,54 @@ def test_save_playlist_rejects_unknown_emotion(api):
 def test_rename_playlist_rejects_blank_name(api):
     with pytest.raises(ValueError):
         api.rename_playlist(1, "  ")
+
+
+def test_update_playlist_delegates_with_int_coercion(monkeypatch, api):
+    seen = {}
+
+    def _fake_update(playlist_id, name, track_ids, description):
+        seen.update(
+            playlist_id=playlist_id, name=name, track_ids=track_ids, description=description
+        )
+        return True
+
+    monkeypatch.setattr(bridge_module.playlists, "update_playlist", _fake_update)
+    # PyWebView delivers JS numbers as float when they cross the bridge.
+    assert api.update_playlist(6.0, "New title", "New description", ["t1", "t2"]) is True
+    assert seen == {
+        "playlist_id": 6,
+        "name": "New title",
+        "track_ids": ["t1", "t2"],
+        "description": "New description",
+    }
+    assert isinstance(seen["playlist_id"], int)
+
+
+def test_update_playlist_rejects_blank_name(api):
+    with pytest.raises(ValueError):
+        api.update_playlist(1, "   ", "desc", ["t1"])
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_update_playlist_normalises_blank_description_to_none(monkeypatch, api, blank):
+    seen = {}
+
+    def _fake_update(playlist_id, name, track_ids, description):
+        seen["description"] = description
+        return True
+
+    monkeypatch.setattr(bridge_module.playlists, "update_playlist", _fake_update)
+    api.update_playlist(1, "Mix", blank, ["t1"])
+    assert seen["description"] is None
+
+
+def test_update_playlist_returns_false_for_missing_playlist(monkeypatch, api):
+    monkeypatch.setattr(
+        bridge_module.playlists,
+        "update_playlist",
+        lambda playlist_id, name, track_ids, description: False,
+    )
+    assert api.update_playlist(999, "Mix", None, []) is False
 
 
 def test_playlist_crud_delegates_with_int_coercion(monkeypatch, api):

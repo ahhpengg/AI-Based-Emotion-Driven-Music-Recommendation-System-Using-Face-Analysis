@@ -68,6 +68,17 @@ export function formatDuration(ms) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// ISO timestamp -> "Jul 12" (year appended once it differs from the current
+// one). Used for the sidebar subtitle and the playlist page's "Created" line.
+export function formatCreatedDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const opts = { month: "short", day: "numeric" };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString(undefined, opts);
+}
+
 // (24, 4_500_000) -> "24 songs, 1 hr 15 min"
 export function formatPlaylistMeta(trackCount, totalMs) {
   const totalMinutes = Math.round((totalMs || 0) / 60000);

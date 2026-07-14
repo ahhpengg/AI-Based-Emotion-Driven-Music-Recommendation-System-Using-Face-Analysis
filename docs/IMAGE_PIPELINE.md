@@ -324,6 +324,91 @@ An optional end-to-end test runs against a real happy-face fixture (`tests/fixtu
 
 ---
 
+## MediaPipe usage telemetry (privacy disclosure)
+
+MediaPipe — the face-detection dependency used in Stage 2 — ships with **Google's
+"Clearcut" client-telemetry uploader compiled into its binaries**. EchoSoul adds no
+analytics of its own (see CLAUDE.md §5 "Privacy-sensitive data"), but this third-party
+component runs inside the app process and periodically attempts to contact Google.
+Owner decision (2026-07-14): **accept and disclose in the capstone report** rather than
+patch around it. This section is the factual basis for that disclosure.
+
+### What happens, and why it happens
+
+- When the first `FaceLandmarker` runs (the FER warm-up at app start, or the photo
+  page's live face check), MediaPipe's embedded Clearcut client starts. From then on it
+  attempts to upload batched usage events to **`https://play.googleapis.com/log`**
+  (Google's Clearcut / Play log-collection endpoint) roughly **once every 60 seconds**
+  for the life of the process, honouring a server-directed backoff window.
+- It happens because Google compiles this usage-analytics client into the released
+  `mediapipe` PyPI wheels. The application does not enable it, cannot see it through the
+  Python API, and the wheel exposes **no documented switch to disable it**.
+- Observed live in the F9 session log (2026-07-14), repeating every ~60 s:
+
+  ```
+  portable_clearcut_uploader.cc:90] Failed to send to clearcut:
+  FAILED_PRECONDITION: Not valid for uploading until: 2026-07-14T03:42:23+00:00
+  ```
+
+  `FAILED_PRECONDITION` here is the client's own rate-limit window ("don't upload again
+  until \<time\>"), **not** a permanent block — once the window passes, an upload can
+  succeed. Assume the telemetry does reach Google on machines with internet access.
+
+### What is uploaded
+
+Binary inspection of the installed wheel (`mediapipe==0.10.35`; embedded strings in
+`tasks/c/libmediapipe.dll`) shows the payload is Google's generic client-analytics
+event format plus a MediaPipe-specific extension:
+
+- `wireless/android/play/playlog/proto/clientanalytics.proto` — `LogRequest` /
+  `LogEvent` / `LogEventKeyValues`: compact usage events expressed as **enums and
+  key-value pairs**, carrying client/platform information (there is e.g. a
+  `WindowsClientInfo` message) and timestamps, sent over HTTPS with a `Bearer` token.
+- `third_party/mediapipe/util/analytics/mediapipe_log_extension.proto` +
+  `mediapipe_logging_enums.proto`, including `logs.proto.mediapipe.SolutionName` — the
+  MediaPipe-specific events record **which MediaPipe solution/task is used** (an enum
+  value) plus library-usage metadata.
+
+The exact field values Google populates are not publicly documented; the schema types
+embedded in the binary bound what the payload *can* contain: library-usage metadata of
+the form "a Windows client used the FaceLandmarker solution at time T".
+
+### What is NOT uploaded
+
+- **No camera frames, no face crops, no landmarks, no emotion predictions.** The event
+  schema is an enum/key-value usage format with **no image payload field**; image data
+  flows through the MediaPipe graph in memory and never enters the logging path.
+- EchoSoul's own guarantees are unchanged and enforced by application code: captured
+  images are processed in-memory only, never written to disk (outside explicit debug
+  mode), never transmitted by application code, and discarded immediately after
+  prediction.
+
+The project's hard privacy rule — **facial images never leave the machine** — therefore
+holds. What leaves the machine is third-party *library-usage* telemetry, not user data.
+
+### Why disclose instead of block
+
+| Option | Verdict |
+|---|---|
+| Disclose in the report | **Chosen** — zero engineering risk; honest limitation |
+| Block `play.googleapis.com` via hosts file / firewall | Machine-wide side effects on other Google software; unreasonable to require of user-study participants |
+| Rebuild MediaPipe from source with analytics compiled out | Out of all proportion for a solo capstone; unmaintainable |
+
+### Suggested report wording (adapt as needed)
+
+> The face-detection library used by the system (Google MediaPipe) embeds a usage-
+> telemetry client that periodically attempts to report library-usage events — which
+> MediaPipe component is in use, platform information, and timestamps — to a Google
+> logging endpoint over HTTPS. This telemetry is compiled into the distributed library
+> and cannot be disabled through its public API. Inspection of the library's embedded
+> event schema and of its runtime behaviour confirmed that these events are a compact
+> enum/key-value usage format and cannot carry image data; captured facial images are
+> processed in memory by the application and never enter the telemetry path. The system
+> itself performs no analytics or tracking. This third-party telemetry is disclosed as a
+> limitation of the chosen dependency rather than a behaviour of the system.
+
+---
+
 ## Related docs
 
 - `docs/FER_MODEL.md` — the model that consumes this pipeline's `(300, 300, 1)` `[0, 255]` output.

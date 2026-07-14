@@ -12,7 +12,7 @@
  * The row for the playlist currently open on the result page is highlighted.
  */
 import { callPy } from "./bridge.js";
-import { EMOTION_THEMES } from "./playlists_ui.js";
+import { EMOTION_THEMES, formatCreatedDate } from "./playlists_ui.js";
 
 const container = document.getElementById("sidebar-playlists");
 
@@ -164,10 +164,11 @@ function playlistItem(playlist, isActive) {
     ? `<img src="${theme.emoji}" alt="" class="w-5 h-5 object-contain shrink-0">`
     : `<span class="material-symbols-outlined text-[20px] shrink-0">music_note</span>`;
   const count = playlist.track_count;
+  const created = formatCreatedDate(playlist.created_at);
   row.innerHTML = `${thumb}
     <span class="flex-grow min-w-0">
       <span data-name class="block text-label-md font-label-md truncate"></span>
-      <span class="block text-label-sm font-label-sm opacity-60">${count} song${count === 1 ? "" : "s"}</span>
+      <span class="block text-label-sm font-label-sm opacity-60 truncate">${count} song${count === 1 ? "" : "s"}${created ? " · " + created : ""}</span>
     </span>
     <button data-kebab aria-label="Playlist options" class="w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-white/10 transition-opacity shrink-0">
       <span class="material-symbols-outlined text-[18px]">more_horiz</span>
