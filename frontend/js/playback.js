@@ -27,6 +27,9 @@ const DEVICE_READY_TIMEOUT_MS = 12000;
 // "playing" | "paused" — the outgoing page's last known state, consumed by the
 // next page's ready handler to transfer (and maybe resume) the session.
 const RESUME_KEY = "playback_resume";
+// Volume fraction (0..1) — each page creates a fresh SDK player, so without
+// this the volume would snap back to the default on every navigation.
+const VOLUME_KEY = "playback_volume";
 // One forced re-login per session: an SDK authentication_error redirects to
 // the auth gate, but if the problem persists we must not bounce forever.
 const AUTH_REDIRECT_KEY = "playback_auth_redirected";
@@ -50,17 +53,22 @@ const els = {
 
 let player = null;
 let deviceId = null;
-let lastState = null; // last player_state_changed payload (null = no session)
+let lastState = null; // last known SDK state (null = no session)
 let hadSession = false; // this page saw a real state at least once
 let stashConsumed = false; // this page's ready handler ran (stash is ours now)
 let tickTimer = null;
-// Position advances locally between state events while playing.
-let basePositionMs = 0;
-let basePositionReadAt = 0;
-let volumeBeforeMute = INITIAL_VOLUME;
 
 let resolveDevice;
 const deviceReady = new Promise((resolve) => (resolveDevice = resolve));
+
+function loadVolume() {
+  const raw = sessionStorage.getItem(VOLUME_KEY);
+  if (raw === null) return INITIAL_VOLUME;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : INITIAL_VOLUME;
+}
+const initialVolume = loadVolume();
+let volumeBeforeMute = initialVolume > 0 ? initialVolume : INITIAL_VOLUME;
 
 function playbackAvailable() {
   return Boolean(els.footer) && !isFreeUser();
@@ -105,10 +113,10 @@ export async function playTracks(trackIds, startIndex = 0) {
 
 // ---- Spotify Web API helpers ---------------------------------------------------
 
-async function apiFetch(path, body) {
+async function apiFetch(path, body, method = "PUT") {
   const token = await callPy("get_spotify_access_token");
   return fetch(`https://api.spotify.com/v1${path}`, {
-    method: "PUT",
+    method,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -140,7 +148,7 @@ function initSdk() {
             if (err?.name === "SpotifySessionExpiredError") onSdkError("auth", err.message);
           });
       },
-      volume: INITIAL_VOLUME,
+      volume: initialVolume,
     });
 
     player.addListener("initialization_error", ({ message }) => onSdkError("init", message));
@@ -248,8 +256,6 @@ function setUnavailable(message) {
 
 function renderState(state) {
   lastState = state;
-  basePositionMs = state ? state.position : 0;
-  basePositionReadAt = Date.now();
 
   if (!state) {
     stopTick();
@@ -315,19 +321,19 @@ function renderProgress(positionMs, durationMs) {
   });
 }
 
-// The SDK only pushes state on changes; advance the position locally while
-// music plays so the bar and clock move.
-function currentPositionMs() {
-  if (!lastState) return 0;
-  if (lastState.paused) return basePositionMs;
-  return Math.min(basePositionMs + (Date.now() - basePositionReadAt), lastState.duration);
-}
-
+// The SDK only pushes state on changes, so while music plays, poll its real
+// state once a second. Polling (rather than extrapolating the position
+// locally) keeps the clock honest — a stalled or hijacked session shows its
+// true frozen position instead of a fantasy countdown (seen live: the local
+// tick once ran a dead session's clock all the way to the end of the track).
 function startTick() {
   if (tickTimer) return;
   tickTimer = setInterval(() => {
-    if (lastState) renderProgress(currentPositionMs(), lastState.duration);
-  }, 500);
+    player?.getCurrentState().then((state) => {
+      // renderState stops this timer when the state says paused/gone.
+      if (tickTimer) renderState(state);
+    });
+  }, 1000);
 }
 
 function stopTick() {
@@ -350,29 +356,54 @@ function activateElement() {
 }
 
 function wireControls() {
+  // Transport goes through the Web API, not the SDK's local methods: after a
+  // paused cross-page transfer the device holds the session's metadata but no
+  // loaded media, and the SDK's togglePlay/nextTrack/seek silently no-op
+  // (seen live). The API commands make the device load the media first.
+  // Pausing stays local — media is always loaded while actually playing.
   els.play?.addEventListener("click", () => {
-    if (!player || !lastState) return;
+    if (!player || !lastState || !deviceId) return;
     activateElement();
-    player.togglePlay().catch((err) => console.error("togglePlay failed:", err));
+    if (lastState.paused) {
+      apiFetch(`/me/player/play?device_id=${deviceId}`).catch((err) =>
+        console.error("resume failed:", err)
+      );
+    } else {
+      player.pause().catch((err) => console.error("pause failed:", err));
+    }
+    // Optimistic flip: the SDK's paused state push can lose a race against a
+    // quick navigation, and pagehide would then stash "playing" for a track
+    // the user just paused (seen live). The next state push corrects drift.
+    lastState.paused = !lastState.paused;
+    setPlayIcon(!lastState.paused);
+    if (lastState.paused) {
+      stopTick();
+    } else {
+      startTick();
+    }
   });
   els.prev?.addEventListener("click", () => {
-    if (!player || !lastState) return;
-    player.previousTrack().catch((err) => console.error("previousTrack failed:", err));
+    if (!deviceId || !lastState) return;
+    apiFetch(`/me/player/previous?device_id=${deviceId}`, undefined, "POST").catch((err) =>
+      console.error("previous failed:", err)
+    );
   });
   els.next?.addEventListener("click", () => {
-    if (!player || !lastState) return;
-    player.nextTrack().catch((err) => console.error("nextTrack failed:", err));
+    if (!deviceId || !lastState) return;
+    apiFetch(`/me/player/next?device_id=${deviceId}`, undefined, "POST").catch((err) =>
+      console.error("next failed:", err)
+    );
   });
 
   els.progress?.addEventListener("click", (e) => {
-    if (!player || !lastState || !lastState.duration) return;
+    if (!deviceId || !lastState || !lastState.duration) return;
     const rect = els.progress.getBoundingClientRect();
     const fraction = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
     const target = Math.round(fraction * lastState.duration);
-    player.seek(target).catch((err) => console.error("seek failed:", err));
-    // Optimistic update; the next player_state_changed corrects any drift.
-    basePositionMs = target;
-    basePositionReadAt = Date.now();
+    apiFetch(`/me/player/seek?position_ms=${target}&device_id=${deviceId}`).catch((err) =>
+      console.error("seek failed:", err)
+    );
+    // Optimistic update; the next state push / poll corrects any drift.
     renderProgress(target, lastState.duration);
   });
 
@@ -405,6 +436,7 @@ function wireControls() {
 
 function setVolume(value) {
   player?.setVolume(value).catch((err) => console.error("setVolume failed:", err));
+  sessionStorage.setItem(VOLUME_KEY, String(value));
   const icon = els.mute?.querySelector(".material-symbols-outlined");
   if (icon) icon.textContent = value === 0 ? "volume_off" : value < 0.5 ? "volume_down" : "volume_up";
 }
@@ -413,6 +445,8 @@ function setVolume(value) {
 
 if (playbackAvailable()) {
   wireControls();
+  if (els.volume) els.volume.value = String(Math.round(initialVolume * 100));
+  setVolume(initialVolume); // sets the mute icon; the SDK player isn't up yet
   window.addEventListener("pagehide", onPageHide);
   initSdk();
 }

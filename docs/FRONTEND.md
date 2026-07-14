@@ -569,10 +569,14 @@ initialises the `Spotify.Player` (device name **EchoSoul**, token via the
 `get_spotify_access_token` bridge method), and:
 
 - **drives the bottom player** chrome.js renders idle: now-playing title /
-  artists / album art, play-pause / prev / next (SDK player methods), the
-  waveform bars as a live progress + seek bar, shuffle (Web API — the SDK has
-  no shuffle method) and a hover-revealed volume slider + mute toggle. The
-  transport stays disabled until a playback session exists.
+  artists / album art, play-pause / prev / next, the waveform bars as a live
+  progress + seek bar (1 s `getCurrentState` poll while playing), shuffle,
+  and a hover-revealed volume slider + mute toggle (volume persists across
+  pages via sessionStorage). Transport commands go through the Spotify Web
+  API rather than the SDK's local methods — after a paused cross-page
+  transfer the SDK's own togglePlay/nextTrack/seek silently no-op (see
+  `docs/SPOTIFY_INTEGRATION.md`). The transport stays disabled until a
+  playback session exists.
 - **resumes the session across page navigations** — see the Routing section
   above and `docs/SPOTIFY_INTEGRATION.md` for the stash/transfer mechanics.
 - **exports `playTracks(trackIds, startIndex)`**, the one entry point other

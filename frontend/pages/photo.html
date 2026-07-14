@@ -13,9 +13,9 @@
 
   <!-- Sidebar and back header are injected by js/chrome.js (no bottom player here) -->
 
-  <!-- Main Scanner Canvas (pt-24 clears the fixed header; min-h-screen lets a
+  <!-- Main Scanner Canvas (pt-20 clears the fixed header; min-h-screen lets a
        short window scroll instead of clipping the viewfinder) -->
-  <main class="min-h-screen flex flex-col items-center justify-center px-4 md:px-gutter pt-24 pb-10 relative lg:ml-[280px]">
+  <main class="min-h-screen flex flex-col items-center justify-center px-4 md:px-gutter pt-20 pb-6 relative lg:ml-[280px]">
     <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
       <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary-container rounded-full blur-[150px] opacity-10"></div>
     </div>
@@ -27,8 +27,11 @@
         <p class="text-body-md font-body-md md:text-body-lg md:font-body-lg text-on-surface-variant">For a precise mood analysis, keep your face within the frame and unobstructed.</p>
       </div>
 
-      <!-- Camera Viewfinder -->
-      <div class="relative w-full aspect-[4/3] md:aspect-video rounded-xl overflow-hidden glass-panel shadow-[0_0_40px_rgba(183,109,255,0.15)] group">
+      <!-- Camera Viewfinder. max-h keeps the Capture button above the fold on
+           short viewports (the 1280×800 window is only ~1024×640 CSS px under
+           125% display scaling); the ratio yields to the cap and object-cover
+           crops the preview to fit. -->
+      <div class="relative w-full aspect-[4/3] md:aspect-video max-h-[44vh] rounded-xl overflow-hidden glass-panel shadow-[0_0_40px_rgba(183,109,255,0.15)] group">
         <!-- Shown until the webcam stream starts (and when no camera is available) -->
         <div id="camera-placeholder" class="absolute inset-0 bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
           <span class="material-symbols-outlined text-on-surface-variant/40" style="font-size: 120px;">face</span>

@@ -92,25 +92,39 @@ def _set_windows_app_identity() -> None:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EchoSoul.App")
 
 
-def _allow_media_autoplay() -> None:
-    """Let the webview start audio without a fresh user gesture.
+def _set_webview2_browser_args() -> None:
+    """Assemble the WebView2 browser arguments (Windows only).
 
-    The app navigates between real HTML files, so every page is a new document
-    with no user activation. Chromium's autoplay policy would block
-    playback.js's cross-page resume (transfer with ``play: true`` after a
-    navigation) even though the music was started by a click two pages ago.
-    WebView2 appends ``WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`` to the browser
-    arguments pywebview sets programmatically, so this is additive. playback.js
-    still handles the SDK's ``autoplay_failed`` event in case the flag is
-    ignored (e.g. a future WebView2 change): the player then just stays paused
-    until the user presses play.
+    ``WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`` **overrides** — does not append
+    to — the ``AdditionalBrowserArguments`` pywebview sets programmatically
+    (verified live 2026-07-13: with the env var set, pywebview's own flags
+    vanish from the browser command line). So besides adding our flag, this
+    must restate pywebview 5.x's flags:
+
+    - ``--allow-file-access-from-files``: pywebview passes this because
+      ``ALLOW_FILE_URLS`` defaults on. Losing it is fatal — ES module
+      ``<script>`` tags on ``file://`` pages are blocked by CORS (opaque
+      origin) and no page script runs at all.
+    - ``--disable-features=ElasticOverscroll``: pywebview's default (cosmetic).
+    - ``--autoplay-policy=no-user-gesture-required``: ours. The app navigates
+      between real HTML files, so a page that resumes music (playback.js's
+      cross-page transfer) has no user activation yet; Chromium would block
+      the audio. playback.js still handles the SDK's ``autoplay_failed`` in
+      case this flag ever stops working — the player then just stays paused.
+
+    Flags already present in the env var (e.g. a dev launcher's
+    ``--remote-debugging-port``) are preserved.
     """
     if sys.platform != "win32":
         return
-    flag = "--autoplay-policy=no-user-gesture-required"
+    flags = [
+        "--disable-features=ElasticOverscroll",
+        "--allow-file-access-from-files",
+        "--autoplay-policy=no-user-gesture-required",
+    ]
     existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
-    if flag not in existing:
-        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{existing} {flag}".strip()
+    merged = [existing] + [flag for flag in flags if flag not in existing]
+    os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = " ".join(merged).strip()
 
 
 def _set_window_icon(window: webview.Window) -> None:
@@ -180,7 +194,7 @@ def main() -> None:
 
     _check_database()
     _set_windows_app_identity()
-    _allow_media_autoplay()
+    _set_webview2_browser_args()
 
     api = BridgeApi()
     # frameless: the OS title bar is replaced by the in-page one (js/titlebar.js
