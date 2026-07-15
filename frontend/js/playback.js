@@ -13,8 +13,13 @@
  *
  * No-ops entirely for Free accounts (chrome.js doesn't even render the player)
  * and on pages without the footer. The result page imports playTracks() for
- * its play-all / per-track buttons; everything else here drives the footer.
+ * its play-all / per-track buttons; everything else here drives the footer,
+ * including the add button, which opens the shared add-to-playlists popup for
+ * whatever is playing — even a song outside the EchoSoul catalogue (queued
+ * from the user's own Spotify apps); those are stored as feature-less
+ * catalogue rows so they replay from playlists like any other song.
  */
+import { openAddPopup } from "./add_to_playlists.js";
 import { callPy } from "./bridge.js";
 import { formatDuration, isFreeUser, showToast } from "./playlists_ui.js";
 
@@ -47,6 +52,8 @@ const els = {
   bars: Array.from(document.querySelectorAll("#player-progress [data-bar]")),
   time: document.getElementById("player-time"),
   shuffle: document.getElementById("player-shuffle"),
+  shuffleDot: document.getElementById("player-shuffle-dot"),
+  add: document.getElementById("player-add"),
   volume: document.getElementById("player-volume"),
   mute: document.getElementById("player-mute"),
 };
@@ -238,15 +245,25 @@ function onSdkError(kind, message) {
 // ---- Footer rendering ----------------------------------------------------------
 
 function setTransportEnabled(enabled) {
-  for (const btn of [els.prev, els.play, els.next, els.shuffle]) {
+  for (const btn of [els.prev, els.play, els.next, els.shuffle, els.add]) {
     if (btn) btn.disabled = !enabled;
   }
+}
+
+function setShuffleIndicator(on) {
+  if (els.shuffle) {
+    els.shuffle.classList.toggle("text-primary", on);
+    els.shuffle.classList.toggle("text-on-surface-variant", !on);
+  }
+  // The colour change alone is easy to miss — the dot is the real signal.
+  if (els.shuffleDot) els.shuffleDot.classList.toggle("hidden", !on);
 }
 
 function setUnavailable(message) {
   stopTick();
   lastState = null;
   setTransportEnabled(false);
+  setShuffleIndicator(false);
   if (els.title) els.title.textContent = "Playback unavailable";
   if (els.artist) {
     els.artist.textContent = message;
@@ -260,6 +277,7 @@ function renderState(state) {
   if (!state) {
     stopTick();
     setTransportEnabled(false);
+    setShuffleIndicator(false);
     if (els.title) els.title.textContent = "Nothing playing";
     if (els.artist) els.artist.textContent = "Play a playlist to get started";
     if (els.cover) els.cover.classList.add("hidden");
@@ -292,11 +310,11 @@ function renderState(state) {
     }
   }
 
+  // Adding needs an actual track (an episode or ad has nothing to store).
+  if (els.add) els.add.disabled = !currentAddableTrack();
+
   setPlayIcon(!state.paused);
-  if (els.shuffle) {
-    els.shuffle.classList.toggle("text-primary", Boolean(state.shuffle));
-    els.shuffle.classList.toggle("text-on-surface-variant", !state.shuffle);
-  }
+  setShuffleIndicator(Boolean(state.shuffle));
   renderProgress(state.position, state.duration);
   if (state.paused) {
     stopTick();
@@ -344,6 +362,26 @@ function stopTick() {
 }
 
 // ---- Controls ------------------------------------------------------------------
+
+// The playing item as an add-to-playlists row, or null when there is nothing
+// addable (no session, or the item is an episode/ad rather than a track).
+// Spotify sometimes relinks a track to a market-specific copy; linked_from
+// then carries the id the queue was actually started with — the one our
+// catalogue and playlists know — so prefer it over the relinked id. Artists
+// are ;-joined to match the merged catalogue's format.
+function currentAddableTrack() {
+  const track = lastState?.track_window?.current_track;
+  if (!track || (track.type && track.type !== "track")) return null;
+  const id = track.linked_from?.id || track.id;
+  if (!id || !track.name) return null;
+  return {
+    track_id: id,
+    track_name: track.name,
+    artists: (track.artists || []).map((a) => a.name).join(";"),
+    album_name: track.album?.name ?? null,
+    duration_ms: lastState.duration || null,
+  };
+}
 
 // Spotify's workaround for browser autoplay gating: call on a real user
 // gesture so the SDK's internal audio element gets activated.
@@ -405,6 +443,15 @@ function wireControls() {
     );
     // Optimistic update; the next state push / poll corrects any drift.
     renderProgress(target, lastState.duration);
+  });
+
+  // Same popup as the header search rows. ensureInCatalogue: the player can
+  // be playing a song that isn't in the EchoSoul catalogue (queued from the
+  // user's own Spotify apps) — the backend stores those on confirm.
+  els.add?.addEventListener("click", () => {
+    const track = currentAddableTrack();
+    if (!track) return;
+    openAddPopup(track, { ensureInCatalogue: true });
   });
 
   // Shuffle has no SDK method — it's a Web API call against our device; the

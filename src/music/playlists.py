@@ -52,6 +52,11 @@ _UPDATE_PLAYLIST_SQL = """
     WHERE playlist_id = %s
 """
 
+_INSERT_STUB_TRACK_SQL = """
+    INSERT INTO music (track_id, track_name, artists, album_name, duration_ms)
+    VALUES (%s, %s, %s, %s, %s)
+"""
+
 
 def _iso(value: datetime | None) -> str | None:
     """Render a datetime column as an ISO-8601 string (JSON-safe), or None."""
@@ -158,7 +163,11 @@ def playlists_containing_track(track_id: str) -> list[int]:
     return [row["playlist_id"] for row in rows]
 
 
-def add_track_to_playlists(track_id: str, playlist_ids: list[int]) -> dict:
+def add_track_to_playlists(
+    track_id: str,
+    playlist_ids: list[int],
+    track_meta: dict | None = None,
+) -> dict:
     """Append one song to several playlists in a single transaction.
 
     The song lands at the end of each playlist (max position + 1), and each
@@ -167,13 +176,45 @@ def add_track_to_playlists(track_id: str, playlist_ids: list[int]) -> dict:
     longer exist (deleted while the popup was open), are skipped rather than
     failing the whole batch.
 
-    Returns ``{"added": [ids], "skipped": [ids]}`` in the order submitted. A
-    track absent from the catalogue violates the FK and aborts the batch
-    (fail loud — search results can only carry real catalogue tracks).
+    Args:
+        track_id:     Spotify track ID of the song to append.
+        playlist_ids: Target playlists, in submission order.
+        track_meta:   Display metadata (``track_name``, ``artists``, optional
+                      ``album_name``/``duration_ms``) for a song that may not
+                      be in the catalogue — the bottom player can be playing
+                      anything the user queued from their own Spotify. When
+                      given and the track is unknown, a feature-less ``music``
+                      row (NULL valence/energy/tempo, migration 0008) is
+                      inserted in the same transaction: playable from
+                      playlists like any catalogue song and findable in the
+                      header search, but never emotion-recommended (the
+                      recommender's BETWEEN filters exclude NULL features).
+                      A track already in the catalogue keeps its real row —
+                      the metadata is ignored.
+
+    Returns ``{"added": [ids], "skipped": [ids]}`` in the order submitted.
+    Without ``track_meta``, a track absent from the catalogue violates the FK
+    and aborts the batch (fail loud — search results can only carry real
+    catalogue tracks).
     """
     added: list[int] = []
     skipped: list[int] = []
+    stub_inserted = False
     with connection.get_cursor(commit=True) as cur:
+        if track_meta is not None:
+            cur.execute("SELECT 1 FROM music WHERE track_id = %s", (track_id,))
+            if cur.fetchone() is None:
+                cur.execute(
+                    _INSERT_STUB_TRACK_SQL,
+                    (
+                        track_id,
+                        track_meta["track_name"],
+                        track_meta["artists"],
+                        track_meta.get("album_name"),
+                        track_meta.get("duration_ms"),
+                    ),
+                )
+                stub_inserted = True
         for playlist_id in playlist_ids:
             cur.execute("SELECT 1 FROM playlist WHERE playlist_id = %s", (playlist_id,))
             if cur.fetchone() is None:
@@ -198,6 +239,10 @@ def add_track_to_playlists(track_id: str, playlist_ids: list[int]) -> dict:
                 (playlist_id,),
             )
             added.append(playlist_id)
+        if stub_inserted and not added:
+            # Every target playlist was deleted while the popup was open:
+            # don't leave an orphan catalogue row that lives in no playlist.
+            cur.execute("DELETE FROM music WHERE track_id = %s", (track_id,))
     return {"added": added, "skipped": skipped}
 
 

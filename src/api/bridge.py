@@ -355,12 +355,32 @@ class BridgeApi:
         """IDs of saved playlists already containing the track (popup lock state)."""
         return playlists.playlists_containing_track(str(track_id))
 
-    def add_track_to_playlists(self, track_id: str, playlist_ids: list) -> dict:
+    def add_track_to_playlists(
+        self, track_id: str, playlist_ids: list, track_meta: dict | None = None
+    ) -> dict:
         """Append a song to the selected saved playlists.
 
         Returns ``{"added": [ids], "skipped": [ids]}`` — skipped covers
         playlists that already contain the song or were deleted meanwhile.
         JS numbers arrive as floats; coerce to int like the other id params.
+
+        ``track_meta`` (from the bottom player's add button) carries the
+        playing song's display metadata so a track missing from the catalogue
+        can be stored as a feature-less ``music`` row — the player can be
+        playing anything the user queued from their own Spotify. Header search
+        rows are always catalogue tracks and pass no metadata.
         """
         ids = [int(playlist_id) for playlist_id in playlist_ids]
-        return playlists.add_track_to_playlists(str(track_id), ids)
+        meta = None
+        if track_meta is not None:
+            # Sanitise to the music table's column shapes: VARCHAR(500) texts,
+            # nullable album/duration, JS float duration -> int.
+            duration = track_meta.get("duration_ms")
+            album = track_meta.get("album_name")
+            meta = {
+                "track_name": str(track_meta["track_name"])[:500],
+                "artists": str(track_meta["artists"])[:500],
+                "album_name": str(album)[:500] if album is not None else None,
+                "duration_ms": int(duration) if duration else None,
+            }
+        return playlists.add_track_to_playlists(str(track_id), ids, track_meta=meta)

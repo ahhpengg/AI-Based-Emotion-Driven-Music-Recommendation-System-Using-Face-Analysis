@@ -15,14 +15,13 @@
  *   - <  lg: sidebar becomes an off-canvas drawer toggled by the header's
  *     hamburger, dimmed by a backdrop; content goes full width.
  *
- * PLACEHOLDER DATA: only the player's queue button is still static. The
- * sidebar playlist list is LIVE: this script renders the empty
+ * Everything rendered here is a LIVE shell: this script renders the empty
  * #sidebar-playlists container plus the library controls strip (search toggle
  * + sort button) and js/sidebar.js (a module loaded after this script) drives
  * them all from the Python bridge (list_user_playlists); the sidebar's +
  * button (#sidebar-new-playlist) opens js/create_playlist.js's create-playlist
- * modal. The header search box is LIVE too: this script renders the input +
- * empty dropdown and js/search.js drives them (catalogue search, play,
+ * modal. The header search box works the same way: this script renders the
+ * input + empty dropdown and js/search.js drives them (catalogue search, play,
  * add-to-playlists). The bottom player is rendered idle here and driven live
  * by js/playback.js (Spotify Web Playback SDK). See docs/FRONTEND.md.
  */
@@ -178,7 +177,10 @@
   // it from Spotify Web Playback SDK state, wires the controls, and re-enables
   // them once a playback session exists. The waveform doubles as the seek bar
   // (playback.js lights the bars up to the playback position and maps clicks
-  // back to a seek). Only the queue button is still a placeholder.
+  // back to a seek). The shuffle button carries a small dot (#player-shuffle-
+  // dot) lit while shuffle is on — the colour change alone was too easy to
+  // miss — and the add button (#player-add) opens the add-to-playlists popup
+  // for whatever is playing, even songs outside the EchoSoul catalogue.
   function footerHTML() {
     const heights = [4, 6, 3, 8, 5, 7, 4, 6, 3, 5, 4, 6, 2, 5, 7, 4, 6, 3, 8, 5, 7, 4, 6, 3, 5, 4, 6, 2];
     const bars = heights.map(
@@ -207,8 +209,8 @@
         <span id="player-time" class="text-on-surface-variant font-label-sm whitespace-nowrap">0:00 / 0:00</span>
       </div>
       <div class="hidden md:flex items-center gap-4 w-1/4 justify-end">
-        <button id="player-shuffle" disabled aria-label="Shuffle" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">shuffle</span></button>
-        <button data-placeholder aria-label="Queue" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">queue_music</span></button>
+        <button id="player-shuffle" disabled aria-label="Shuffle" class="relative text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">shuffle</span><span id="player-shuffle-dot" class="hidden absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary pointer-events-none"></span></button>
+        <button id="player-add" disabled aria-label="Add to playlist" title="Add to playlist" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">playlist_add</span></button>
         <div class="group flex items-center gap-2">
           <input id="player-volume" type="range" min="0" max="100" value="70" aria-label="Volume" class="hidden group-hover:block w-24 accent-primary cursor-pointer">
           <button id="player-mute" aria-label="Mute" class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">volume_up</span></button>
@@ -264,14 +266,6 @@
         case "open-sidebar":  e.preventDefault(); openSidebar(); break;
         case "close-sidebar": e.preventDefault(); closeSidebar(); break;
       }
-      return;
-    }
-    // Placeholder controls: no backend yet — swallow the click so href="#"
-    // doesn't jump the page, and close the drawer if it was a sidebar item.
-    const placeholder = e.target.closest("[data-placeholder]");
-    if (placeholder && placeholder.tagName !== "INPUT") {
-      e.preventDefault();
-      if (placeholder.closest("#app-sidebar")) closeSidebar();
     }
   });
 

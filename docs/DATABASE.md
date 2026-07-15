@@ -73,9 +73,9 @@ CREATE TABLE music (
     album_name    VARCHAR(500) DEFAULT NULL,
     genre         VARCHAR(100) DEFAULT NULL,
     genre_source  ENUM('mh','jbc_sub','jbc','artist') DEFAULT NULL,
-    valence       FLOAT        NOT NULL,
-    energy        FLOAT        NOT NULL,
-    tempo         FLOAT        NOT NULL,
+    valence       FLOAT        DEFAULT NULL,   -- NULL = external track (migration 0008)
+    energy        FLOAT        DEFAULT NULL,
+    tempo         FLOAT        DEFAULT NULL,
     popularity    TINYINT UNSIGNED DEFAULT NULL,
     duration_ms   INT UNSIGNED DEFAULT NULL,
     release_year  SMALLINT UNSIGNED DEFAULT NULL,
@@ -118,6 +118,30 @@ The order `valence, energy, tempo` is chosen because valence has the tightest us
 - **`genre` is a single string** chosen by the merge process. Not a list. See `docs/MUSIC_DATA.md` for the resolution rule.
 - **`popularity` is `TINYINT UNSIGNED`** (0–255) instead of `INT` because values are always 0–100. Saves space at 1.2M rows.
 - **`valence` and `energy` are `FLOAT`** (4 bytes) not `DOUBLE`. The precision (~7 decimal digits) far exceeds Spotify's own granularity (2–3 significant digits in practice).
+- **`valence`/`energy`/`tempo` are nullable** (migration 0008) to allow *external tracks* — see below. Every merged-catalogue row has all three; only runtime-inserted rows are NULL.
+
+### External tracks (migration 0008)
+
+The bottom player's add-to-playlist button works on **whatever Spotify is
+playing**, which the user can have queued from their own Spotify apps — i.e. a
+song that is not in the merged catalogue at all. Because `playlist_song` has an
+FK into `music`, such a song is stored at add-time as a **feature-less `music`
+row** built from the player's own metadata (`track_name`, `artists` ;-joined,
+`album_name`, `duration_ms`; everything else NULL), inserted in the same
+transaction as the playlist rows (`playlists.add_track_to_playlists`,
+`track_meta` parameter — only the player path sends it; header-search rows are
+catalogue tracks by construction). If every target playlist vanished while the
+popup was open, the stub is deleted before commit so no orphan row lingers.
+
+Consequences, all deliberate:
+
+- **Playable from playlists like any other row** — playback only needs the
+  Spotify `track_id`.
+- **Never emotion-recommended** — the recommender's `BETWEEN` predicates and
+  `v_in_scope_music` both exclude NULL features.
+- **Findable in the header search** — the `music` FULLTEXT index picks the row
+  up automatically (tier-2 relevance order; the popularity hot tier is
+  untouched). If it can live in your playlists, search should find it.
 
 ### Size estimate
 
@@ -314,7 +338,7 @@ User reordering is a planned feature. Two tracks added at the same logical momen
 
 ### Why no FK from playlist_song.track_id to music.track_id with ON DELETE behaviour?
 
-The `music` table is treated as immutable (we never delete catalogue tracks at runtime). The FK is declared without `ON DELETE` action so the default (RESTRICT) protects against accidental deletes. If a future data refresh removes a track, the resulting FK violation is exactly the loud failure we want.
+Catalogue tracks are never deleted at runtime (the only runtime `music` writes are the external-track stub inserts described above, plus the same-transaction removal of a stub whose add turned out to be a no-op — and that row is by construction referenced by no playlist). The FK is declared without `ON DELETE` action so the default (RESTRICT) protects against accidental deletes. If a future data refresh removes a track, the resulting FK violation is exactly the loud failure we want.
 
 ---
 
@@ -333,7 +357,7 @@ WHERE valence IS NOT NULL
   AND tempo BETWEEN 20 AND 250;
 ```
 
-(The hard filtering is also done at merge time, so this view is mostly defensive.)
+(The hard filtering is also done at merge time for catalogue rows; since migration 0008 the NULL checks additionally exclude runtime-inserted external tracks, which must never be recommended.)
 
 ---
 
@@ -350,6 +374,7 @@ src/db/migrations/
 ├── 0005_playlist_description.sql
 ├── 0006_fulltext_search.sql
 ├── 0007_search_hot_tier.sql
+├── 0008_nullable_audio_features.sql
 └── …
 ```
 

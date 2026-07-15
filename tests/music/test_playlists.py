@@ -7,6 +7,7 @@ teardown. Skipped if MySQL is unreachable.
 
 from __future__ import annotations
 
+import mysql.connector
 import pytest
 
 from src.db import connection
@@ -197,6 +198,103 @@ def test_add_track_bumps_updated_at(track_ids, extra_track_id, cleanup):
 
     playlists.add_track_to_playlists(extra_track_id, [playlist_id])
     assert playlists.load_playlist(playlist_id)["updated_at"] > "2020-01-02"
+
+
+# A track id that cannot exist in the catalogue (real Spotify IDs are base62;
+# this one is synthetic). Used to exercise the bottom player's add path, where
+# the playing song may not be an EchoSoul catalogue track at all.
+_EXTERNAL_TRACK_ID = "ZZechosoulTESTtrack001"
+
+
+@pytest.fixture
+def external_track_cleanup():
+    """Remove the synthetic external track and any playlist rows pointing at it.
+
+    Deletes playlist_song references first so the music delete never trips the
+    FK, regardless of which playlists the test's `cleanup` already removed.
+    """
+    yield
+    connection.execute(
+        "DELETE FROM playlist_song WHERE track_id = %s", (_EXTERNAL_TRACK_ID,)
+    )
+    connection.execute("DELETE FROM music WHERE track_id = %s", (_EXTERNAL_TRACK_ID,))
+
+
+def test_add_unknown_track_with_meta_creates_catalogue_row(
+    track_ids, cleanup, external_track_cleanup
+):
+    playlist_id = playlists.save_playlist("Add External", track_ids)
+    cleanup.append(playlist_id)
+
+    meta = {
+        "track_name": "External Song",
+        "artists": "Ext Artist;Feat Artist",
+        "album_name": "External Album",
+        "duration_ms": 201_000,
+    }
+    result = playlists.add_track_to_playlists(
+        _EXTERNAL_TRACK_ID, [playlist_id], track_meta=meta
+    )
+    assert result == {"added": [playlist_id], "skipped": []}
+
+    # The playlist renders it with the stored metadata (INNER JOIN on music).
+    last = playlists.load_playlist(playlist_id)["tracks"][-1]
+    assert last["track_id"] == _EXTERNAL_TRACK_ID
+    assert last["track_name"] == "External Song"
+    assert last["artists"] == "Ext Artist;Feat Artist"
+    assert last["duration_ms"] == 201_000
+
+    # Feature-less catalogue row: NULL features keep it out of every emotion
+    # rule (BETWEEN never matches NULL) and out of v_in_scope_music.
+    row = connection.fetchone(
+        "SELECT valence, energy, tempo, popularity FROM music WHERE track_id = %s",
+        (_EXTERNAL_TRACK_ID,),
+    )
+    assert row == {"valence": None, "energy": None, "tempo": None, "popularity": None}
+
+
+def test_add_known_track_with_meta_keeps_catalogue_row(track_ids, extra_track_id, cleanup):
+    playlist_id = playlists.save_playlist("Add Known Meta", track_ids)
+    cleanup.append(playlist_id)
+    before = connection.fetchone(
+        "SELECT track_name, artists, valence FROM music WHERE track_id = %s",
+        (extra_track_id,),
+    )
+
+    meta = {"track_name": "Wrong Name", "artists": "Wrong Artist"}
+    result = playlists.add_track_to_playlists(extra_track_id, [playlist_id], track_meta=meta)
+    assert result == {"added": [playlist_id], "skipped": []}
+
+    after = connection.fetchone(
+        "SELECT track_name, artists, valence FROM music WHERE track_id = %s",
+        (extra_track_id,),
+    )
+    assert after == before
+
+
+def test_add_unknown_track_without_meta_fails_loud(track_ids, cleanup, external_track_cleanup):
+    playlist_id = playlists.save_playlist("Add External NoMeta", track_ids)
+    cleanup.append(playlist_id)
+
+    with pytest.raises(mysql.connector.Error):
+        playlists.add_track_to_playlists(_EXTERNAL_TRACK_ID, [playlist_id])
+    # The whole transaction rolled back: no partial playlist rows.
+    assert len(playlists.load_playlist(playlist_id)["tracks"]) == len(track_ids)
+
+
+def test_add_unknown_track_all_skipped_leaves_no_orphan_row(external_track_cleanup):
+    meta = {"track_name": "External Song", "artists": "Ext Artist"}
+    result = playlists.add_track_to_playlists(
+        _EXTERNAL_TRACK_ID, [2_000_000_000], track_meta=meta
+    )
+    assert result == {"added": [], "skipped": [2_000_000_000]}
+    # Every target was gone, so the stub row must not linger in the catalogue.
+    assert (
+        connection.fetchone(
+            "SELECT 1 FROM music WHERE track_id = %s", (_EXTERNAL_TRACK_ID,)
+        )
+        is None
+    )
 
 
 def test_playlists_containing_track(track_ids, extra_track_id, cleanup):

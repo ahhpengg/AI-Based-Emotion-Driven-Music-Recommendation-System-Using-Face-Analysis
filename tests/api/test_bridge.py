@@ -337,15 +337,45 @@ def test_get_playlists_containing_track_delegates(monkeypatch, api):
 def test_add_track_to_playlists_coerces_js_float_ids(monkeypatch, api):
     seen = {}
 
-    def _fake_add(track_id, playlist_ids):
+    def _fake_add(track_id, playlist_ids, track_meta=None):
         seen["track_id"], seen["playlist_ids"] = track_id, playlist_ids
+        seen["track_meta"] = track_meta
         return {"added": playlist_ids, "skipped": []}
 
     monkeypatch.setattr(bridge_module.playlists, "add_track_to_playlists", _fake_add)
     result = api.add_track_to_playlists("t1", [3.0, 7.0])
     assert result == {"added": [3, 7], "skipped": []}
-    assert seen == {"track_id": "t1", "playlist_ids": [3, 7]}
+    assert seen == {"track_id": "t1", "playlist_ids": [3, 7], "track_meta": None}
     assert all(isinstance(pid, int) for pid in seen["playlist_ids"])
+    json.dumps(result)
+
+
+def test_add_track_to_playlists_sanitises_external_meta(monkeypatch, api):
+    """The player's add button sends the playing song's metadata (the song may
+    not be a catalogue track): texts clamp to VARCHAR(500), JS float duration
+    coerces to int, absent album stays None."""
+    seen = {}
+
+    def _fake_add(track_id, playlist_ids, track_meta=None):
+        seen["track_meta"] = track_meta
+        return {"added": playlist_ids, "skipped": []}
+
+    monkeypatch.setattr(bridge_module.playlists, "add_track_to_playlists", _fake_add)
+    meta = {
+        "track_name": "X" * 600,
+        "artists": "Ext Artist;Feat Artist",
+        "album_name": None,
+        "duration_ms": 201000.0,
+    }
+    result = api.add_track_to_playlists("t9", [3.0], meta)
+    assert result == {"added": [3], "skipped": []}
+    assert seen["track_meta"] == {
+        "track_name": "X" * 500,
+        "artists": "Ext Artist;Feat Artist",
+        "album_name": None,
+        "duration_ms": 201000,
+    }
+    assert isinstance(seen["track_meta"]["duration_ms"], int)
     json.dumps(result)
 
 

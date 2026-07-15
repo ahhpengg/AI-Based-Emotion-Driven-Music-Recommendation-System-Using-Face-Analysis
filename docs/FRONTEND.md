@@ -654,9 +654,10 @@ there.
 - **Row click = play.** Premium: `playTracks([track_id])` (single-track queue
   on the SDK device, toast on failure). Free: opens the song in Spotify via
   `openInSpotify` (same degradation as the tracklists).
-- **Add button (playlist_add icon)** opens a modal popup listing every saved
-  playlist (`list_user_playlists`) as a checkbox row (emotion emoji, name,
-  song count). Playlists already containing the song
+- **Add button (playlist_add icon)** opens the **shared add-to-playlists popup**
+  (`js/add_to_playlists.js` — also used by the bottom player's add button): a
+  modal listing every saved playlist (`list_user_playlists`) as a checkbox row
+  (emotion emoji, name, song count). Playlists already containing the song
   (`get_playlists_containing_track`) are shown **checked and disabled** with an
   "Added" hint. Confirm calls `add_track_to_playlists` — the song lands at the
   end of each chosen playlist and each one's `updated_at` is bumped (the
@@ -664,7 +665,11 @@ there.
   `refreshSidebarPlaylists()`, and — if one of the affected playlists is open
   on the result page — a delayed `location.reload()` so its tracklist (and any
   later edit's working copy) isn't stale. No saved playlists → the popup says
-  so and Confirm stays disabled.
+  so and Confirm stays disabled. The popup owns its Escape handling (a
+  capture-phase listener that closes it and suppresses the page's own Escape
+  handlers, so the results dropdown survives the first Escape). Search rows
+  are catalogue tracks by construction, so this caller does **not** pass
+  `ensureInCatalogue` — only the player path does (see below).
 
 ### Create playlist modal (js/create_playlist.js)
 
@@ -718,7 +723,22 @@ initialises the `Spotify.Player` (device name **EchoSoul**, token via the
   API rather than the SDK's local methods — after a paused cross-page
   transfer the SDK's own togglePlay/nextTrack/seek silently no-op (see
   `docs/SPOTIFY_INTEGRATION.md`). The transport stays disabled until a
-  playback session exists.
+  playback session exists. Shuffle-on shows a small accent **dot under the
+  shuffle icon** (`#player-shuffle-dot`) on top of the icon colour change,
+  which alone was too easy to miss (owner request, July 2026).
+- **add button (`#player-add`,** replaced the queue placeholder, July 2026**)**
+  opens the shared add-to-playlists popup (`js/add_to_playlists.js`, same one
+  as the header search rows) for the **currently playing track**. Because the
+  user can queue anything from their own Spotify apps, the playing song may
+  not be an EchoSoul catalogue track — the player passes
+  `ensureInCatalogue: true` plus the SDK state's metadata (name, ;-joined
+  artist names, album, duration), and on confirm the backend stores unknown
+  tracks as feature-less catalogue rows (playable from playlists, searchable,
+  never emotion-recommended — see `docs/DATABASE.md` § "External tracks").
+  Spotify relinking is handled by preferring `linked_from.id` (the id the
+  queue was started with — the one our catalogue knows) over the relinked id.
+  The button is disabled while nothing is playing and for non-track items
+  (episodes/ads).
 - **resumes the session across page navigations** — see the Routing section
   above and `docs/SPOTIFY_INTEGRATION.md` for the stash/transfer mechanics.
 - **exports `playTracks(trackIds, startIndex)`**, the one entry point other
