@@ -348,8 +348,23 @@ keep the arrow glyph and the cover opens the playlist view instead.
 
 ### `photo.html`
 
-Two states, as-built in `js/camera.js` (which replaced the placeholder `photo.js`):
+A consent gate plus two capture states, as-built in `js/camera.js` (which
+replaced the placeholder `photo.js`):
 
+0. **Consent** — before the camera starts, `#camera-consent` (a `z-[60]` modal
+   over the dimmed page, matching the app's other popups) shows the camera
+   disclaimer: how the photo is used (one snapshot, analysed on-device, result
+   used only to pick a matching playlist) and that images are never stored
+   (in-memory only, never saved / uploaded / shared, discarded right after the
+   emotion check — CLAUDE.md §5). Choices: **I agree** starts the camera;
+   **Disagree** goes back (`history.back()`, home fallback when there is no
+   history); **"Choose your mood manually"** swaps to `mood.html` via
+   `location.replace` (the declined photo page stays out of back-history). A
+   *"Don't show this again during this session"* tickbox — applied only on
+   agree — sets `sessionStorage.camera_consent_ack = "1"`, which skips the
+   modal for the rest of the session (cleared automatically when the app
+   closes). Deliberately no backdrop-click/Escape dismissal: the choice must
+   be explicit, and the camera stays off until agreement.
 1. **Preview** — `getUserMedia` (1280×720 ideal, user-facing) streams into
    `#webcam-preview`, mirrored via CSS for a natural selfie view (the captured
    data itself is **not** mirrored). Every 500 ms a ≤320 px JPEG frame goes to

@@ -226,7 +226,13 @@ Record failures inline as they happen; fix and re-run the failing pass before ti
 ### Pass 2 — Camera → emotion → playlist E2E
 
 ```
-[ ] Photo page: webcam preview appears (mirrored selfie view)
+[ ] Photo page: consent modal shows first (data-use explanation + images-not-stored
+    assurance); camera stays off behind it
+[ ] Disagree → returns to the previous page; entering the photo page again re-shows the modal
+[ ] "Choose your mood manually" → mood page (Back from there skips the photo page)
+[ ] Agree with "Don't show this again" ticked → later photo-page visits skip the modal;
+    restart the app → modal is back (session-only)
+[ ] After Agree: webcam preview appears (mirrored selfie view)
 [ ] No face in frame: guide red, status line explains, shutter disabled
 [ ] Two faces (e.g. hold a photo next to your face): guide red, shutter disabled
 [ ] Exactly one face: guide green, shutter enables within ~1 s

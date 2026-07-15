@@ -3,6 +3,11 @@
  * (docs/FRONTEND.md > photo.html, docs/IMAGE_PIPELINE.md > UI guidance).
  *
  * Flow:
+ *   0. A consent modal (#camera-consent) explains how the photo is used and
+ *      that images are never stored; the camera stays off until "I agree".
+ *      Disagree goes back, or the user can switch to the manual mood page.
+ *      A session-scoped "don't show again" tick skips the modal on later
+ *      visits (sessionStorage.camera_consent_ack).
  *   1. getUserMedia streams into #webcam-preview (mirrored via CSS for a
  *      natural selfie view; the captured data itself is NOT mirrored).
  *   2. Every 500 ms a downscaled JPEG frame goes to quick_face_check and the
@@ -222,4 +227,47 @@ els.retryBtn.addEventListener("click", startCamera);
 
 window.addEventListener("pagehide", stopCamera);
 
-startCamera();
+// ---- Camera-usage consent gate ------------------------------------------------
+//
+// The camera must not turn on until the user has read and accepted the
+// disclaimer (CLAUDE.md §5: photos are analysed in memory on this device and
+// never stored or transmitted). Agreeing with the tickbox checked suppresses
+// the modal for the rest of the session (sessionStorage, so it resets when
+// the app closes); without the tick it reappears on every visit to this page.
+
+const CONSENT_SESSION_KEY = "camera_consent_ack";
+
+const consent = {
+  overlay: document.getElementById("camera-consent"),
+  agreeBtn: document.getElementById("consent-agree"),
+  disagreeBtn: document.getElementById("consent-disagree"),
+  manualBtn: document.getElementById("consent-manual"),
+  dontShow: document.getElementById("consent-dont-show"),
+};
+
+consent.agreeBtn.addEventListener("click", () => {
+  // The tick only takes effect on agreement — suppressing the disclaimer on a
+  // disagree would silently dead-end the camera path for the whole session.
+  if (consent.dontShow.checked) sessionStorage.setItem(CONSENT_SESSION_KEY, "1");
+  consent.overlay.classList.add("hidden");
+  startCamera();
+});
+
+consent.disagreeBtn.addEventListener("click", () => {
+  // Declined: return to wherever the user came from (usually home). A page
+  // opened with no history (direct open in dev) falls back to home.
+  if (window.history.length > 1) window.history.back();
+  else window.location.replace("home.html");
+});
+
+consent.manualBtn.addEventListener("click", () => {
+  // The photo page was never really entered, so replace it in history — Back
+  // from the mood page then returns to the previous page, not to this gate.
+  window.location.replace("mood.html");
+});
+
+if (sessionStorage.getItem(CONSENT_SESSION_KEY) === "1") {
+  startCamera();
+} else {
+  consent.overlay.classList.remove("hidden");
+}
