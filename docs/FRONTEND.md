@@ -570,7 +570,9 @@ module loaded right after `chrome.js`/`titlebar.js` on all six pages) fetches
 the rows from `list_user_playlists` on every page load (cheap query) into
 module state and renders them through the active library filter + sort order.
 The **+** button beside the "Playlists" label (`#sidebar-new-playlist`) opens
-the create-playlist modal (see *Create playlist modal* below).
+the create-playlist modal (see *Create playlist modal* below). The EchoSoul
+brand header is pinned: everything below it (Playlists label, controls strip,
+rows, Scan Emotion button) scrolls inside `#sidebar-scroll`, not the aside.
 
 **Library search** (`#sidebar-search-btn`): clicking the search icon swaps the
 controls strip for a text field (*"Search in your library"* hint) and filters

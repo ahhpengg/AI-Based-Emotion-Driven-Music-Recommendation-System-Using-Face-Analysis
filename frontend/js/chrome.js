@@ -70,8 +70,8 @@
       : `<div class="mt-auto pt-6 pb-28"></div>`;
 
     return `
-    <aside id="app-sidebar" class="w-[280px] h-full fixed left-0 top-0 border-r border-white/10 backdrop-blur-xl shadow-sm bg-surface-container-low flex flex-col py-8 px-6 gap-stack-md z-40 lg:z-20 overflow-y-auto transition-transform duration-300 -translate-x-full lg:translate-x-0">
-      <div class="flex items-center gap-4 mb-4">
+    <aside id="app-sidebar" class="w-[280px] h-full fixed left-0 top-0 border-r border-white/10 backdrop-blur-xl shadow-sm bg-surface-container-low flex flex-col py-8 gap-stack-md z-40 lg:z-20 transition-transform duration-300 -translate-x-full lg:translate-x-0">
+      <div class="flex items-center gap-4 mb-4 px-6 shrink-0">
         <a data-nav="home" class="w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(183,109,255,0.2)] cursor-pointer shrink-0">
           <img src="../assets/img/logo.png" alt="EchoSoul logo" class="w-full h-full object-contain">
         </a>
@@ -84,6 +84,11 @@
         </button>
       </div>
 
+      <!-- The brand header above stays pinned; everything from here down lives
+           in its own scroll container (the aside itself no longer scrolls).
+           The horizontal padding sits on the header and on this container —
+           not the aside — so the scrollbar hugs the sidebar's right border. -->
+      <div id="sidebar-scroll" class="flex-1 min-h-0 overflow-y-auto flex flex-col px-6">
       <nav class="flex flex-col mt-4 flex-grow gap-[2px]">
         <div class="flex items-center justify-between mt-6 mb-2 pl-3 pr-1">
           <p class="text-label-sm font-label-sm text-outline-variant uppercase tracking-wider">Playlists</p>
@@ -94,8 +99,8 @@
             <button id="sidebar-search-btn" aria-label="Search in your library" title="Search in your library" class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/5 hover:text-on-surface transition-colors">
               <span class="material-symbols-outlined text-[20px]">search</span>
             </button>
-            <div class="flex items-center gap-1">
-              <button id="sidebar-sort-btn" aria-label="Sort playlists" title="Sort playlists" class="flex items-center gap-2 px-2 py-1.5 rounded-full hover:bg-white/5 hover:text-on-surface transition-colors">
+            <div class="flex items-center">
+              <button id="sidebar-sort-btn" aria-label="Sort playlists" title="Sort playlists" class="flex items-center gap-2 pl-2 pr-1 py-1.5 rounded-full hover:bg-white/5 hover:text-on-surface transition-colors">
                 <span id="sidebar-sort-label" class="text-label-sm font-label-sm whitespace-nowrap">Recently edited</span>
                 <span class="material-symbols-outlined text-[20px]">list</span>
               </button>
@@ -119,6 +124,7 @@
       </nav>
 
       ${scanBlock}
+      </div>
     </aside>`;
   }
 
