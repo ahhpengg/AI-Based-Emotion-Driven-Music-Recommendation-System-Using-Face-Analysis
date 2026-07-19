@@ -16,6 +16,7 @@ def generate_playlist(
     size: int = 25,
     seed: int | None = None,
     genres: list[str] | None = None,
+    exclude_ids: list[str] | None = None,
 ) -> list[dict]:
     """
     Generate a playlist of N tracks matching the given emotion.
@@ -31,6 +32,11 @@ def generate_playlist(
                   "Canonical genre") to restrict the pool to. None/empty = all
                   genres — the default flow, and what the UI sends while every
                   bucket is still checked. Unknown buckets simply match nothing.
+        exclude_ids: Optional track_ids already served this session for the same
+                  emotion×genre context (see "Recent-track exclusion"). The draw
+                  prefers unseen tracks; it backfills from the excluded ones when
+                  the pool runs out, so it never returns fewer tracks than a
+                  no-exclusion draw. None/empty = no exclusion (the default).
 
     Returns:
         List of dicts, each with keys:
@@ -234,6 +240,61 @@ CSV via the database.
 
 ---
 
+## Recent-track exclusion (owner-requested, 2026-07-19)
+
+### The problem
+
+Stage 1's random window is what makes two calls differ — but it only works when
+the emotion's matching set is *much larger* than the 1000-row window. For a
+narrow **genre × emotion** pool that isn't true: the window (plus wrap-around)
+pulls the **entire** matching set every time, so the random `start` becomes a
+no-op and all variety collapses onto Stage 2's draw. Two independent draws of
+`size` from a pool of `N` then repeat ~`size²/N` tracks. Measured against the
+real catalogue:
+
+| genre × emotion | pool `N` | ~repeats per re-attempt (size 20) |
+|---|--:|--:|
+| K-Pop × sad | 17 | all 17 every time (pool < playlist) |
+| C-Pop / Mandopop × happy | 133 | ~3 |
+| K-Pop × neutral | 107 | ~4 |
+| Pop × happy | 5,739 | ~0.1 (feels varied) |
+
+Users re-attempting the same mood/genre path noticed the same handful of songs
+recurring. Unfiltered generation never shows this (`N` is hundreds of thousands,
+so `size²/N` < 1).
+
+### The fix
+
+The frontend remembers the track_ids it has already served for a given
+**(emotion × active genre filter)** context, session-scoped, and passes them as
+`exclude_ids`. The draw (`_sample_excluding`) then splits the fetched window
+into `fresh` (not in `exclude_ids`) and `stale` (already served):
+
+- `len(fresh) >= size` → sample from `fresh` only. A re-attempt **walks forward**
+  through the pool with no repeats.
+- otherwise → serve all of `fresh`, then backfill the remainder from `stale`
+  (reshuffled). This is the exhaustion guard: once every unseen track is used
+  up, the playlist degrades gracefully to a reshuffle of what exists — it is
+  **never shorter or emptier** than a no-exclusion draw, so exclusion introduces
+  no new empty-pool / `playlist_failed` path.
+
+Applying the exclusion in Python **over the already-fetched window** is
+deliberate: it needs **no SQL, index, or migration change**, and it is exact
+precisely where it matters — for the narrow pools the window *is* the whole pool,
+while for huge pools it is a near-no-op (Stage 1 already varies the window, and
+excluding a few hundred ids from 1000 leaves plenty). The recommender stays
+stateless: the memory lives in the frontend (`frontend/js/recent_tracks.js`,
+`sessionStorage`, rolling cap per context), so `generate_playlist` remains a pure
+function — same `(emotion, size, seed, genres, exclude_ids)` ⇒ same output, and
+the existing seeded tests are unaffected because `exclude_ids=None` takes the
+original `rng.sample` path bit-for-bit.
+
+**Scope note:** this is session-only (cleared when the app closes) and therefore
+*not* the long-term listening-history personalisation that CLAUDE.md lists as out
+of scope. There is no cross-run user model.
+
+---
+
 ## Determinism for tests
 
 ```python
@@ -273,7 +334,8 @@ See `docs/TESTING.md`.
 | Candidate pool is empty | Return `[]`; caller can show "no matches" message |
 | `genres` names an unknown bucket | Matches nothing (contributes 0 rows); no error — the picker only offers real buckets, so this only happens to stale/hand-edited state |
 | `genres` given but every bucket is thin | Shorter playlist; the UI shows "only N songs match" per the thin-combo policy |
-| Same emotion called twice in quick succession | Different output each time (no seed), thanks to fresh `random.Random()` instance per call |
+| Same emotion called twice in quick succession | Different output each time (no seed), thanks to fresh `random.Random()` instance per call. For a re-attempt of the same emotion×genre path the frontend also passes `exclude_ids` (see "Recent-track exclusion") so narrow pools walk forward instead of repeating |
+| `exclude_ids` covers the entire matching pool | Backfill from the served set — a reshuffle of the same tracks, never `[]` (exhaustion guard) |
 | Rule table doesn't have the emotion | Caught at Step 1 — but if somehow seeded incorrectly, Step 2 raises `TypeError` on missing row. Fail loud. |
 | Catalogue contains NULL valence/energy/tempo | Excluded by `v_in_scope_music` view |
 | Track is in 100 candidate playlists | Not relevant — each call produces an independent sample |

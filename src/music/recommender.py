@@ -163,6 +163,7 @@ def generate_playlist(
     size: int = DEFAULT_PLAYLIST_SIZE,
     seed: int | None = None,
     genres: list[str] | None = None,
+    exclude_ids: list[str] | None = None,
 ) -> list[dict]:
     """Build a playlist of `size` tracks matching the given emotion.
 
@@ -175,6 +176,13 @@ def generate_playlist(
                  genre") restricting the pool. None/empty = all genres — the
                  default flow, and what the UI sends while every bucket is
                  checked. Unknown buckets simply contribute no rows.
+        exclude_ids: Optional track_ids the caller has served recently for this
+                 same emotion×genre context (the frontend's session memory,
+                 docs/RECOMMENDATION.md "Recent-track exclusion"). The draw
+                 prefers tracks NOT in this set so repeated requests walk forward
+                 through the pool instead of re-drawing it; when unseen tracks run
+                 out it backfills from the excluded ones, so the result is never
+                 shorter or emptier than an unfiltered draw.
 
     Returns a list of track dicts (keys: track_id, track_name, artists,
     album_name, genre, valence, energy, tempo, duration_ms). The list may be
@@ -197,7 +205,44 @@ def generate_playlist(
             deficit = CANDIDATE_POOL_LIMIT - len(candidates)
             candidates += connection.fetchall(_CANDIDATE_WRAP_SQL, (*params, start, deficit))
 
-    return rng.sample(candidates, min(size, len(candidates)))
+    return _sample_excluding(rng, candidates, size, exclude_ids)
+
+
+def _sample_excluding(
+    rng: random.Random, candidates: list[dict], size: int, exclude_ids: list[str] | None
+) -> list[dict]:
+    """Draw `size` tracks from the window, preferring ones not recently served.
+
+    Splits the fetched candidate window into ``fresh`` (track_id not in
+    ``exclude_ids``) and ``stale`` (already served for this context). Fills from
+    ``fresh`` first; only when ``fresh`` can't cover the draw does it top up from
+    ``stale``. This is what turns a re-attempt of the same emotion×genre path
+    into a forward walk through the pool rather than an independent re-draw
+    (docs/RECOMMENDATION.md "Recent-track exclusion").
+
+    Applying the exclusion here — in Python, over the already-fetched window —
+    keeps the SQL and its indexes untouched. It is exact precisely where it
+    matters: for the narrow pools that repeat (the whole matching set is ≤ the
+    ~1000-row window, so the window IS the pool), and a near-no-op for huge pools
+    where the Stage-1 window already varies every call.
+
+    The backfill guarantees the result is never shorter than a no-exclusion draw
+    of the same window, so exclusion can never turn a non-empty pool into an
+    empty playlist — it introduces no new ``playlist_failed`` path.
+    """
+    want = min(size, len(candidates))
+    if not exclude_ids:
+        return rng.sample(candidates, want)
+    excluded = set(exclude_ids)
+    fresh = [t for t in candidates if t["track_id"] not in excluded]
+    if len(fresh) >= want:
+        return rng.sample(fresh, want)
+    # Unseen tracks exhausted: serve all of them, backfill the rest from the
+    # recently-served ones, then shuffle so the fresh block isn't always on top.
+    stale = [t for t in candidates if t["track_id"] in excluded]
+    playlist = fresh + rng.sample(stale, want - len(fresh))
+    rng.shuffle(playlist)
+    return playlist
 
 
 def _genre_filtered_candidates(genres: list[str], params: tuple, start: float) -> list[dict]:

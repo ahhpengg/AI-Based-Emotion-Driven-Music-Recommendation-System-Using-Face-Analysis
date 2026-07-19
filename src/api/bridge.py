@@ -274,6 +274,7 @@ class BridgeApi:
         emotion: str,
         size: int = recommender.DEFAULT_PLAYLIST_SIZE,
         genres: list[str] | None = None,
+        exclude_ids: list[str] | None = None,
     ) -> list[dict]:
         """Build a playlist of ``size`` tracks for a supported emotion.
 
@@ -285,6 +286,12 @@ class BridgeApi:
         every bucket is checked (the default), so the unfiltered path stays
         untouched. Non-string/blank entries from the JS side are dropped; an
         empty result means no filter.
+
+        ``exclude_ids`` are track_ids the frontend served on earlier attempts at
+        this same emotion×genre path this session (docs/RECOMMENDATION.md
+        "Recent-track exclusion"); the recommender prefers unseen tracks so a
+        re-attempt walks forward through the pool. Sanitised like ``genres``;
+        empty means no exclusion.
         """
         size = int(size)
         if size < 1:
@@ -292,7 +299,12 @@ class BridgeApi:
         cleaned = None
         if genres:
             cleaned = [g.strip() for g in genres if isinstance(g, str) and g.strip()] or None
-        return recommender.generate_playlist(emotion, size=size, genres=cleaned)
+        excludes = None
+        if exclude_ids:
+            excludes = [t.strip() for t in exclude_ids if isinstance(t, str) and t.strip()] or None
+        return recommender.generate_playlist(
+            emotion, size=size, genres=cleaned, exclude_ids=excludes
+        )
 
     def get_genre_buckets(self) -> list[str]:
         """Return the canonical genre vocabulary for the picker, sorted.

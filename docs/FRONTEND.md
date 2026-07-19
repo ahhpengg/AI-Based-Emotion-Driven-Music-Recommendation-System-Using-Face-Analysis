@@ -441,10 +441,13 @@ it navigates to result or error. As-built flow:
   - `status === "ok"` → `last_emotion = result.emotion`, continue.
 - **Manual path** (`"manual"`): the emotion is already in
   `sessionStorage.last_emotion` (mood card / home chip); inference is skipped.
-- **Both**: `callPy("generate_playlist", emotion)` (backend default size, 20)
-  → `current_playlist` (JSON) + `playlist_emotion` → result.html. An empty
-  list maps to `error_code = "playlist_failed"`; a rejected bridge promise
-  (backend raised / timed out) maps to `"unexpected"`.
+- **Both**: `callPy("generate_playlist", emotion, 20, filter, exclude)` (size 20;
+  `filter` = the session genre filter, `exclude` = this context's recently-served
+  ids from `recent_tracks.js`, see § "Recent-track exclusion") → `current_playlist`
+  (JSON) + `playlist_emotion` → result.html; the served ids are recorded back into
+  the session memory on success. An empty list maps to
+  `error_code = "playlist_failed"`; a rejected bridge promise (backend raised /
+  timed out) maps to `"unexpected"`.
 - Landing here with no flow behind it (deep link, stale history) goes straight
   home rather than erroring.
 
@@ -618,6 +621,33 @@ surfaces.
   this mood with your genre picks — widen your genre selection on the home
   page…"). It stays `display:none` — reserving no space — unless triggered.
   No per-bucket counts anywhere — owner decision.
+
+---
+
+## Recent-track exclusion (js/recent_tracks.js)
+
+Owner-requested (2026-07-19). Re-attempting the **same mood × genre** path kept
+returning the same handful of songs when the matching pool was narrow (e.g.
+K-Pop × sad has only ~17 tracks — smaller than one playlist). Backend rationale
+in `docs/RECOMMENDATION.md` § "Recent-track exclusion"; the state lives here.
+
+- **What it does:** remembers the `track_id`s already served for a given
+  **(emotion × active genre filter)** context this session and feeds them to
+  `generate_playlist` as `exclude_ids`, so each re-attempt walks forward through
+  the pool instead of re-drawing it. The backend backfills once unseen tracks
+  run out, so this **never** shortens a playlist or causes `playlist_failed`.
+- **State:** `sessionStorage.recent_tracks` = `{ "<emotion>|<filter>": [id, …] }`.
+  The context key pairs the emotion with the genre filter (`"all"` when
+  unfiltered), so switching mood or changing genres starts a fresh cycle
+  automatically. Rolling cap of 300 ids **per context** bounds storage; it
+  comfortably exceeds every narrow pool that actually repeats. Session-scoped
+  only — **not** long-term personalisation (CLAUDE.md out-of-scope).
+- **Wiring (`loading.js`):** before generating it reads
+  `getRecentExclusions(emotion, filter)` and passes it as the 4th bridge arg to
+  `generate_playlist`; on success it calls `recordServedTracks(emotion, filter,
+  ids)` before navigating to the result page. There is **no re-roll button**
+  (owner decision) — this works purely on the existing redo-scan / re-pick-mood
+  path. All-`sessionStorage` failures degrade silently (worst case: a repeat).
 
 ---
 

@@ -18,6 +18,7 @@
  */
 import { callPy } from "./bridge.js";
 import { getGenreFilter } from "./genre_filter.js";
+import { getRecentExclusions, recordServedTracks } from "./recent_tracks.js";
 
 // Keep the analyzing animation up long enough to register; finishing in a
 // sub-second flash looks like a glitch. Measured from page load to navigation.
@@ -124,13 +125,19 @@ function fail(code, detected) {
 
     setStatus("Building your playlist...", "Matching songs to your mood");
     progressTo(PLAYLIST_CAP, PLAYLIST_CREEP_MS);
-    // The session's genre filter (home chip / result-page picker) applies to
-    // every generation; null = all genres = the unfiltered backend path.
-    const playlist = await callPy("generate_playlist", emotion, PLAYLIST_SIZE, getGenreFilter());
+    // The session's genre filter (home chip) applies to every generation; null =
+    // all genres = the unfiltered backend path. exclude_ids is this session's
+    // memory of what we already served for this exact emotion×filter pool, so a
+    // re-attempt of the same mood walks forward through the pool instead of
+    // re-drawing it (docs/RECOMMENDATION.md "Recent-track exclusion").
+    const filter = getGenreFilter();
+    const exclude = getRecentExclusions(emotion, filter);
+    const playlist = await callPy("generate_playlist", emotion, PLAYLIST_SIZE, filter, exclude);
     if (!Array.isArray(playlist) || !playlist.length) {
       await fail("playlist_failed");
       return;
     }
+    recordServedTracks(emotion, filter, playlist.map((t) => t.track_id));
     sessionStorage.setItem("current_playlist", JSON.stringify(playlist));
     sessionStorage.setItem("playlist_emotion", emotion);
     // A fresh playlist starts from the per-emotion defaults: drop any title /

@@ -169,3 +169,45 @@ def test_list_genre_buckets_matches_seed_vocabulary():
     assert len(buckets) == 23
     assert buckets == sorted(buckets)
     assert {"Pop", "SEA Pop", "C-Pop / Mandopop", "K-Pop"} <= set(buckets)
+
+
+# --- recent-track exclusion (docs/RECOMMENDATION.md "Recent-track exclusion") -
+
+
+def test_empty_exclude_ids_matches_no_exclusion():
+    # Falsy exclude_ids must take the identical rng path as the old signature,
+    # so previously-recorded determinism is untouched.
+    base = recommender.generate_playlist("happy", size=10, seed=42)
+    for exclude in (None, []):
+        same = recommender.generate_playlist("happy", size=10, seed=42, exclude_ids=exclude)
+        assert [t["track_id"] for t in same] == [t["track_id"] for t in base]
+
+
+def test_exclusion_walks_forward_in_a_large_pool():
+    # Same seed => same Stage-1 window; excluding the first draw must yield a
+    # fully disjoint second draw (the window has ~1000 rows, far more than 20).
+    first = recommender.generate_playlist("happy", size=20, seed=5)
+    ids1 = [t["track_id"] for t in first]
+    second = recommender.generate_playlist("happy", size=20, seed=5, exclude_ids=ids1)
+    assert len(second) == 20
+    assert {t["track_id"] for t in second}.isdisjoint(ids1)
+
+
+def test_exclusion_backfills_when_pool_is_exhausted():
+    # K-Pop x sad is the catalogue's one sub-playlist pool (~17 tracks). Once
+    # every track has been served, excluding them all must NOT empty the
+    # playlist — it backfills to the same tracks (reshuffled), never [].
+    first = recommender.generate_playlist("sad", seed=1, genres=["K-Pop"])
+    ids1 = [t["track_id"] for t in first]
+    assert 0 < len(first) < recommender.DEFAULT_PLAYLIST_SIZE
+    second = recommender.generate_playlist("sad", seed=2, genres=["K-Pop"], exclude_ids=ids1)
+    assert len(second) == len(first)
+    assert {t["track_id"] for t in second} == set(ids1)
+
+
+def test_exclusion_never_shortens_a_full_playlist():
+    # Even with a large exclusion set, a big pool still returns a full playlist
+    # (backfill guarantees length >= a no-exclusion draw of the same window).
+    served = [t["track_id"] for t in recommender.generate_playlist("happy", size=25, seed=9)]
+    again = recommender.generate_playlist("happy", size=25, seed=9, exclude_ids=served)
+    assert len(again) == 25

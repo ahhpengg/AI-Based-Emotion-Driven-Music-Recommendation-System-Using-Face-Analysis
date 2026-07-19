@@ -136,7 +136,7 @@ def test_downscale_preserves_aspect_and_skips_small_frames():
 def test_generate_playlist_delegates_with_default_size(monkeypatch, api):
     calls = {}
 
-    def _fake_generate(emotion, size, genres=None):
+    def _fake_generate(emotion, size, genres=None, exclude_ids=None):
         calls["emotion"], calls["size"], calls["genres"] = emotion, size, genres
         return [{"track_id": "t1"}]
 
@@ -156,7 +156,7 @@ def test_generate_playlist_rejects_non_positive_size(monkeypatch, api, bad_size)
     monkeypatch.setattr(
         bridge_module.recommender,
         "generate_playlist",
-        lambda emotion, size, genres=None: pytest.fail("must not be called"),
+        lambda emotion, size, genres=None, exclude_ids=None: pytest.fail("must not be called"),
     )
     with pytest.raises(ValueError):
         api.generate_playlist("happy", bad_size)
@@ -166,7 +166,7 @@ def test_generate_playlist_coerces_js_number_size(monkeypatch, api):
     # PyWebView delivers JS numbers as float when they cross the bridge.
     seen = {}
 
-    def _fake_generate(emotion, size, genres=None):
+    def _fake_generate(emotion, size, genres=None, exclude_ids=None):
         seen["size"] = size
         return []
 
@@ -179,7 +179,7 @@ def test_generate_playlist_coerces_js_number_size(monkeypatch, api):
 def test_generate_playlist_passes_cleaned_genres(monkeypatch, api):
     seen = {}
 
-    def _fake_generate(emotion, size, genres=None):
+    def _fake_generate(emotion, size, genres=None, exclude_ids=None):
         seen["genres"] = genres
         return []
 
@@ -193,13 +193,39 @@ def test_generate_playlist_passes_cleaned_genres(monkeypatch, api):
 def test_generate_playlist_treats_empty_genres_as_no_filter(monkeypatch, api, empty):
     seen = {}
 
-    def _fake_generate(emotion, size, genres=None):
+    def _fake_generate(emotion, size, genres=None, exclude_ids=None):
         seen["genres"] = genres
         return []
 
     monkeypatch.setattr(bridge_module.recommender, "generate_playlist", _fake_generate)
     api.generate_playlist("happy", 25, empty)
     assert seen["genres"] is None
+
+
+def test_generate_playlist_passes_cleaned_exclude_ids(monkeypatch, api):
+    seen = {}
+
+    def _fake_generate(emotion, size, genres=None, exclude_ids=None):
+        seen["exclude_ids"] = exclude_ids
+        return []
+
+    monkeypatch.setattr(bridge_module.recommender, "generate_playlist", _fake_generate)
+    # JS may deliver blanks/non-strings in the array; they must be dropped.
+    api.generate_playlist("happy", 25, None, ["  t1  ", "", "t2", 7, None])
+    assert seen["exclude_ids"] == ["t1", "t2"]
+
+
+@pytest.mark.parametrize("empty", [None, [], ["", "   ", 3]])
+def test_generate_playlist_treats_empty_exclude_ids_as_none(monkeypatch, api, empty):
+    seen = {}
+
+    def _fake_generate(emotion, size, genres=None, exclude_ids=None):
+        seen["exclude_ids"] = exclude_ids
+        return []
+
+    monkeypatch.setattr(bridge_module.recommender, "generate_playlist", _fake_generate)
+    api.generate_playlist("happy", 25, None, empty)
+    assert seen["exclude_ids"] is None
 
 
 def test_get_genre_buckets_caches_the_vocabulary(monkeypatch, api):
