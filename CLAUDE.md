@@ -161,6 +161,13 @@ The owner is a single developer reviewing every diff. Prefer:
 - Working code at every commit (no half-implementations).
 - Clear commit messages: `module: short imperative summary` (e.g. `fer: add Haar cascade face detection`).
 
+### No AI co-authorship in commits
+
+This is a graded capstone submitted under academic-integrity rules, and examiners view AI assistance with bias. When creating commits on the owner's behalf:
+- **Never** add a `Co-Authored-By: Claude ...` trailer (or any AI/assistant co-author) to commit messages.
+- **Never** add "Generated with Claude Code" or similar attribution lines to commit messages or PR bodies.
+- The owner (Lee Peng Haw) is the sole author and committer on every commit.
+
 ### No silent dependency additions
 
 If a task seems to require a new pip package, stop and confirm with the owner first. Adding `requests` is fine; adding `fastapi` or `pytorch` is not.

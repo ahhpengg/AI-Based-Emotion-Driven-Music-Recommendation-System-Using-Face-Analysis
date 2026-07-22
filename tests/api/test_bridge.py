@@ -376,6 +376,21 @@ def test_playlist_crud_delegates_with_int_coercion(monkeypatch, api):
     assert all(isinstance(v, int) for v in (seen["load"], seen["rename"][0], seen["delete"]))
 
 
+def test_set_playlist_saved_delegates_with_int_and_bool_coercion(monkeypatch, api):
+    seen = {}
+
+    def _fake_set(playlist_id, saved):
+        seen.update(playlist_id=playlist_id, saved=saved)
+        return True
+
+    monkeypatch.setattr(bridge_module.playlists, "set_playlist_saved", _fake_set)
+    # JS delivers the id as float and the flag as a JS boolean.
+    assert api.set_playlist_saved(8.0, False) is True
+    assert seen == {"playlist_id": 8, "saved": False}
+    assert isinstance(seen["playlist_id"], int)
+    assert isinstance(seen["saved"], bool)
+
+
 # --- header search -----------------------------------------------------------
 
 

@@ -211,11 +211,11 @@
         <button id="player-next" disabled aria-label="Next" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">skip_next</span></button>
       </div>
       <div class="hidden lg:flex items-center gap-4 flex-grow max-w-md mx-8">
-        <div id="player-progress" class="flex gap-[2px] h-8 flex-grow items-center cursor-pointer">${bars}</div>
+        <div id="player-progress" class="flex gap-[2px] h-8 flex-grow items-center justify-between cursor-pointer">${bars}</div>
         <span id="player-time" class="text-on-surface-variant font-label-sm whitespace-nowrap">0:00 / 0:00</span>
       </div>
       <div class="hidden md:flex items-center gap-4 w-1/4 justify-end">
-        <button id="player-shuffle" disabled aria-label="Shuffle" class="relative text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">shuffle</span><span id="player-shuffle-dot" class="hidden absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary pointer-events-none"></span></button>
+        <button id="player-shuffle" disabled aria-label="Shuffle" title="Shuffle playlist" class="relative text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">shuffle</span><span id="player-shuffle-dot" class="hidden absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary pointer-events-none"></span></button>
         <button id="player-add" disabled aria-label="Add to playlist" title="Add to playlist" class="text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40"><span class="material-symbols-outlined">playlist_add</span></button>
         <div class="group flex items-center gap-2">
           <input id="player-volume" type="range" min="0" max="100" value="70" aria-label="Volume" class="hidden group-hover:block w-24 accent-primary cursor-pointer">

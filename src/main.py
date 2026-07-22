@@ -34,6 +34,7 @@ from src.api import BridgeApi  # noqa: E402
 from src.api.bridge import MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH  # noqa: E402
 from src.db import connection  # noqa: E402
 from src.fer import inference  # noqa: E402
+from src.music import playlists  # noqa: E402
 
 logger = logging.getLogger(__name__)
 FRONTEND_INDEX = _REPO_ROOT / "frontend" / "index.html"
@@ -63,6 +64,23 @@ def _check_database() -> None:
             exc,
         )
         raise SystemExit(1) from exc
+
+
+def _purge_unsaved_playlists() -> None:
+    """Finalise deferred deletes from previous sessions (docs/DATABASE.md).
+
+    Un-saving a playlist from the result page's bookmark is a soft delete
+    (``saved = 0``) so it can be re-saved while the page is open; once the app
+    restarts nothing could re-save it, so drop those rows now. Best-effort — a
+    cleanup failure (e.g. the 0011 migration not yet applied) must not stop the
+    app starting.
+    """
+    try:
+        purged = playlists.purge_unsaved_playlists()
+        if purged:
+            logger.info("purged %d un-saved playlist(s) from a previous session", purged)
+    except MySQLError as exc:
+        logger.warning("could not purge un-saved playlists: %s", exc)
 
 
 def _warm_up_model() -> None:
@@ -193,6 +211,7 @@ def main() -> None:
     debug = os.environ.get("ECHOSOUL_DEBUG", "0").lower() in {"1", "true", "yes"}
 
     _check_database()
+    _purge_unsaved_playlists()
     _set_windows_app_identity()
     _set_webview2_browser_args()
 

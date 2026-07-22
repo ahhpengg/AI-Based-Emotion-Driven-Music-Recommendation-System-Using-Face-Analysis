@@ -8,7 +8,13 @@
  * 2. Detection flow (no hash): the playlist generate_playlist produced,
  *    stashed by loading.js in sessionStorage.current_playlist (+
  *    playlist_emotion), rendered under the per-emotion mood banner. The
- *    bookmark button persists it via save_playlist and refreshes the sidebar.
+ *    bookmark button toggles saving: the first click persists it (save_playlist
+ *    mints the row); clicking the filled bookmark un-saves it and clicking the
+ *    outline bookmark re-saves it (set_playlist_saved — a reversible *soft*
+ *    delete, so the id / created date / tracks survive). Un-saving keeps the
+ *    playlist on screen — it just leaves the sidebar. The saved view shows the
+ *    button filled from the start, so a saved playlist can be un-saved/re-saved
+ *    too. (The sidebar's own Delete is a separate hard delete.)
  *    Opened with no flow behind it, the page heads home — there is nothing
  *    real to show.
  *
@@ -89,14 +95,17 @@ const EMOTIONS = {
 const GENERATED_PLAYLIST_SIZE = 20;
 
 // Everything the header/tracklist/edit-mode render from. `description` uses
-// "" for "none"; `playlistId` is the saved id (saved view, or set by a fresh
-// save so later edits keep the DB copy in sync).
+// "" for "none"; `playlistId` is the DB row id (null until the fresh view's
+// first save mints it — it then stays set even while un-saved, since un-save
+// is a soft delete). `saved` is whether that row is currently in the sidebar
+// and drives the bookmark's filled/outline state.
 const state = {
   mode: null, // "fresh" | "saved"
-  emotion: null, // fresh view only (drives the bookmark save)
+  emotion: null, // drives the bookmark save (set in both views)
   accent: DEFAULT_ACCENT,
   free: false,
   playlistId: null,
+  saved: false, // is the DB row currently saved (in the sidebar)?
   title: "",
   description: "",
   createdAt: null, // ISO string, or null before a fresh playlist is saved
@@ -163,12 +172,11 @@ function renderHeader() {
 // ---- Mode 1: saved playlist (#playlist=<id>) --------------------------------
 
 async function renderSavedPlaylist(playlistId) {
-  // A saved playlist isn't a fresh detection: no mood banner, and the
-  // save-bookmark affordance makes no sense (it's already saved). Neither
-  // does the thin-pool note — a saved playlist is a snapshot, not a fresh
-  // generation.
+  // A saved playlist isn't a fresh detection: no mood banner, and no thin-pool
+  // note (it's a snapshot, not a fresh generation). The bookmark stays — shown
+  // filled — so the playlist can be un-saved and re-saved from here without
+  // leaving the page.
   document.getElementById("result-banner")?.remove();
-  document.getElementById("save-playlist-btn")?.remove();
   document.getElementById("genre-thin-note")?.remove();
   state.mode = "saved";
   state.free = isFreeUser();
@@ -187,13 +195,20 @@ async function renderSavedPlaylist(playlistId) {
     document.getElementById("cover-play-overlay")?.remove();
     document.getElementById("playlist-play-btn")?.remove();
     document.getElementById("edit-playlist-btn")?.remove();
+    document.getElementById("save-playlist-btn")?.remove();
     document.title = "EchoSoul - Playlist not found";
     return;
   }
 
   const theme = EMOTION_THEMES[(playlist.source_emotion || "").toLowerCase()] || null;
   state.accent = theme ? theme.accent : DEFAULT_ACCENT;
+  // Kept so un-saving then re-saving here preserves the original emotion
+  // (null for a user-created playlist — save_playlist accepts that).
+  state.emotion = (playlist.source_emotion || "").toLowerCase() || null;
   state.playlistId = playlist.playlist_id;
+  // Normally true (reached from the sidebar); false if this session un-saved it
+  // and the page was reloaded — the bookmark then shows outline, re-saveable.
+  state.saved = playlist.saved !== false;
   state.title = playlist.name;
   state.description = playlist.description || "";
   state.createdAt = playlist.created_at;
@@ -201,6 +216,7 @@ async function renderSavedPlaylist(playlistId) {
   renderCover(state.accent, theme);
   renderHeader();
   renderTracklist();
+  wireBookmarkButton();
   wireEditButton();
 }
 
@@ -254,7 +270,7 @@ function renderDetectionResult() {
   renderCover(theme.accent, theme);
   renderHeader();
   renderTracklist();
-  wireSaveButton();
+  wireBookmarkButton();
   wireEditButton();
   renderThinNote();
 }
@@ -316,40 +332,97 @@ function startPlayback(trackIds, startIndex) {
   });
 }
 
-// ---- Save (bookmark button, fresh-detection view only) ----------------------
+// ---- Save / un-save (bookmark button, both views) ---------------------------
 
-function wireSaveButton() {
+// The bookmark is a toggle. The very first save in the fresh view mints the DB
+// row (save_playlist); after that, and in the saved view, clicking flips the
+// row's saved flag (set_playlist_saved) — un-saving is a *soft* delete, so the
+// row keeps its id, created date and tracks and re-saving restores it
+// unchanged. Either way the playlist stays on screen; only its sidebar presence
+// changes. (The sidebar's own Delete is still a hard delete.)
+function wireBookmarkButton() {
   const btn = document.getElementById("save-playlist-btn");
   if (!btn) return;
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    let playlistId;
-    try {
-      playlistId = await callPy(
-        "save_playlist",
-        state.title,
-        state.emotion,
-        state.tracks.map((t) => t.track_id),
-        state.description || null
-      );
-    } catch (err) {
-      console.error("save_playlist failed:", err);
-      showToast("Couldn't save the playlist — please try again.");
-      btn.disabled = false;
+  renderBookmark(btn);
+  btn.addEventListener("click", () => {
+    if (state.playlistId === null) createSavedPlaylist(btn);
+    else toggleSavedFlag(btn);
+  });
+}
+
+// Filled + accent-coloured when saved, outline + default when not.
+function renderBookmark(btn) {
+  btn.querySelector(".material-symbols-outlined")?.classList.toggle("filled", state.saved);
+  btn.style.color = state.saved ? state.accent : "";
+  btn.title = state.saved ? "Remove from saved" : "Save playlist";
+}
+
+// Fresh view, first save: create the DB row.
+async function createSavedPlaylist(btn) {
+  btn.disabled = true;
+  let playlistId;
+  try {
+    playlistId = await callPy(
+      "save_playlist",
+      state.title,
+      state.emotion,
+      state.tracks.map((t) => t.track_id),
+      state.description || null
+    );
+  } catch (err) {
+    console.error("save_playlist failed:", err);
+    showToast("Couldn't save the playlist — please try again.");
+    btn.disabled = false;
+    return;
+  }
+  // Now backed by a DB row: the created date appears, later edits sync the
+  // saved copy (update_playlist), and the new row shows in the sidebar live.
+  state.playlistId = playlistId;
+  state.saved = true;
+  state.createdAt = new Date().toISOString();
+  renderHeader();
+  renderBookmark(btn);
+  btn.disabled = false;
+  showToast("Playlist saved");
+  refreshSidebarPlaylists();
+}
+
+// Existing DB row: flip its saved flag (soft delete / restore).
+async function toggleSavedFlag(btn) {
+  const next = !state.saved;
+  btn.disabled = true;
+  let ok;
+  try {
+    ok = await callPy("set_playlist_saved", state.playlistId, next);
+  } catch (err) {
+    console.error("set_playlist_saved failed:", err);
+    showToast(
+      next
+        ? "Couldn't save the playlist — please try again."
+        : "Couldn't remove the playlist — please try again."
+    );
+    btn.disabled = false;
+    return;
+  }
+  if (!ok) {
+    // The row was hard-deleted meanwhile (e.g. the sidebar's Delete). Re-saving
+    // re-creates it from the on-screen copy; an un-save has nothing left to do.
+    if (next) {
+      state.playlistId = null;
+      await createSavedPlaylist(btn);
       return;
     }
-    // Saved: fill the bookmark and keep the button disabled — saving the same
-    // playlist twice only clutters the sidebar. The new row appears live, and
-    // later edits on this page now update the saved copy (update_playlist).
-    state.playlistId = playlistId;
-    state.createdAt = new Date().toISOString();
-    renderHeader();
-    btn.querySelector(".material-symbols-outlined")?.classList.add("filled");
-    btn.style.color = state.accent;
-    btn.title = "Saved";
-    showToast("Playlist saved");
-    refreshSidebarPlaylists();
-  });
+    state.playlistId = null;
+    state.saved = false;
+    renderBookmark(btn);
+    btn.disabled = false;
+    return;
+  }
+  state.saved = next;
+  renderBookmark(btn);
+  btn.disabled = false;
+  showToast(next ? "Playlist saved" : "Removed from saved");
+  refreshSidebarPlaylists();
 }
 
 // ---- Edit mode (both views) --------------------------------------------------
@@ -416,6 +489,14 @@ function enterEditMode() {
   cancelBtn.addEventListener("click", () => exitEditMode());
   edit.controls.append(doneBtn, cancelBtn);
 
+  // A blank title isn't a valid playlist name: gate Done on a non-empty
+  // (trimmed) title so the user can't commit an emptied field.
+  const syncDoneEnabled = () => {
+    doneBtn.disabled = edit.titleInput.value.trim() === "";
+  };
+  edit.titleInput.addEventListener("input", syncDoneEnabled);
+  syncDoneEnabled();
+
   titleEl.classList.add("hidden");
   titleEl.after(edit.titleInput);
   descEl.classList.add("hidden");
@@ -472,8 +553,8 @@ function editTrackRow(index, t, removable) {
 }
 
 async function commitEdit(doneBtn) {
-  // An emptied title falls back to what it was — the backend rejects blank
-  // names, and "no title" isn't a meaningful playlist state.
+  // Done is disabled while the title is blank (see syncDoneEnabled), so this
+  // is normally non-empty; the fallback stays as a defensive guard.
   const title = edit.titleInput.value.trim() || state.title;
   const description = edit.descInput.value.trim();
   const pending = edit.pending;

@@ -373,8 +373,21 @@ class BridgeApi:
             raise ValueError("Playlist name must not be empty")
         return playlists.rename_playlist(int(playlist_id), name)
 
+    def set_playlist_saved(self, playlist_id: int, saved: bool) -> bool:
+        """Save or un-save a playlist from the result page's bookmark toggle.
+
+        Un-saving is a soft delete: the playlist leaves the sidebar but keeps
+        its id, created date and tracks, so re-saving (``saved=True``) restores
+        it unchanged. Returns False if the playlist no longer exists.
+        """
+        return playlists.set_playlist_saved(int(playlist_id), bool(saved))
+
     def delete_playlist(self, playlist_id: int) -> bool:
-        """Delete a saved playlist (songs cascade). True if it existed."""
+        """Hard-delete a saved playlist (songs cascade) — the sidebar's Delete.
+
+        True if it existed. For the reversible bookmark toggle use
+        ``set_playlist_saved`` instead.
+        """
         return playlists.delete_playlist(int(playlist_id))
 
     # --- Header search (frontend/js/search.js) -------------------------------

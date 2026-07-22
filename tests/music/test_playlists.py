@@ -214,9 +214,7 @@ def external_track_cleanup():
     FK, regardless of which playlists the test's `cleanup` already removed.
     """
     yield
-    connection.execute(
-        "DELETE FROM playlist_song WHERE track_id = %s", (_EXTERNAL_TRACK_ID,)
-    )
+    connection.execute("DELETE FROM playlist_song WHERE track_id = %s", (_EXTERNAL_TRACK_ID,))
     connection.execute("DELETE FROM music WHERE track_id = %s", (_EXTERNAL_TRACK_ID,))
 
 
@@ -232,9 +230,7 @@ def test_add_unknown_track_with_meta_creates_catalogue_row(
         "album_name": "External Album",
         "duration_ms": 201_000,
     }
-    result = playlists.add_track_to_playlists(
-        _EXTERNAL_TRACK_ID, [playlist_id], track_meta=meta
-    )
+    result = playlists.add_track_to_playlists(_EXTERNAL_TRACK_ID, [playlist_id], track_meta=meta)
     assert result == {"added": [playlist_id], "skipped": []}
 
     # The playlist renders it with the stored metadata (INNER JOIN on music).
@@ -284,15 +280,11 @@ def test_add_unknown_track_without_meta_fails_loud(track_ids, cleanup, external_
 
 def test_add_unknown_track_all_skipped_leaves_no_orphan_row(external_track_cleanup):
     meta = {"track_name": "External Song", "artists": "Ext Artist"}
-    result = playlists.add_track_to_playlists(
-        _EXTERNAL_TRACK_ID, [2_000_000_000], track_meta=meta
-    )
+    result = playlists.add_track_to_playlists(_EXTERNAL_TRACK_ID, [2_000_000_000], track_meta=meta)
     assert result == {"added": [], "skipped": [2_000_000_000]}
     # Every target was gone, so the stub row must not linger in the catalogue.
     assert (
-        connection.fetchone(
-            "SELECT 1 FROM music WHERE track_id = %s", (_EXTERNAL_TRACK_ID,)
-        )
+        connection.fetchone("SELECT 1 FROM music WHERE track_id = %s", (_EXTERNAL_TRACK_ID,))
         is None
     )
 
@@ -338,3 +330,56 @@ def test_delete_cascades_to_songs(track_ids):
         (playlist_id,),
     )
     assert remaining["n"] == 0
+
+
+# --- soft delete (saved flag): the result page's bookmark toggle -------------
+
+
+def test_new_playlist_loads_as_saved(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Saved Default", track_ids, "happy")
+    cleanup.append(playlist_id)
+    assert playlists.load_playlist(playlist_id)["saved"] is True
+
+
+def test_unsave_hides_from_list_but_keeps_row(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Test Unsave", track_ids, "sad")
+    cleanup.append(playlist_id)
+
+    assert playlists.set_playlist_saved(playlist_id, False) is True
+    # Gone from the sidebar list…
+    assert all(p["playlist_id"] != playlist_id for p in playlists.list_playlists())
+    # …but the row (and its songs) survive and report saved=False.
+    loaded = playlists.load_playlist(playlist_id)
+    assert loaded is not None
+    assert loaded["saved"] is False
+    assert [t["track_id"] for t in loaded["tracks"]] == track_ids
+
+
+def test_resave_restores_same_id_and_created_at(track_ids, cleanup):
+    playlist_id = playlists.save_playlist("Test Resave", track_ids, "happy")
+    cleanup.append(playlist_id)
+    created_at = playlists.load_playlist(playlist_id)["created_at"]
+
+    playlists.set_playlist_saved(playlist_id, False)
+    assert playlists.set_playlist_saved(playlist_id, True) is True
+
+    restored = playlists.load_playlist(playlist_id)
+    assert restored["saved"] is True
+    assert restored["created_at"] == created_at  # same row: created date preserved
+    assert any(p["playlist_id"] == playlist_id for p in playlists.list_playlists())
+
+
+def test_set_saved_missing_returns_false():
+    assert playlists.set_playlist_saved(2_000_000_000, False) is False
+
+
+def test_purge_removes_unsaved_only(track_ids, cleanup):
+    unsaved_id = playlists.save_playlist("Purge Me", track_ids, "angry")
+    saved_id = playlists.save_playlist("Keep Me", track_ids, "happy")
+    cleanup.extend([unsaved_id, saved_id])  # delete_playlist(unsaved) later is a harmless no-op
+    playlists.set_playlist_saved(unsaved_id, False)
+
+    playlists.purge_unsaved_playlists()
+
+    assert playlists.load_playlist(unsaved_id) is None  # hard-deleted
+    assert playlists.load_playlist(saved_id) is not None  # untouched

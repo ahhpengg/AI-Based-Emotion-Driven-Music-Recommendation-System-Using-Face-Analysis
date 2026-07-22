@@ -78,6 +78,13 @@ refreshGenreChip();
 
 // ---- "Your latest playlist" showcase ---------------------------------------
 
+function startShowcasePlayback(trackIds, startIndex) {
+  playTracks(trackIds, startIndex).catch((err) => {
+    console.error("playTracks failed:", err);
+    showToast(err.message || "Spotify couldn't start playback.");
+  });
+}
+
 function renderShowcase(section, playlist) {
   const free = isFreeUser();
   const theme = EMOTION_THEMES[(playlist.source_emotion || "").toLowerCase()];
@@ -103,11 +110,25 @@ function renderShowcase(section, playlist) {
     totalMs
   );
 
+  // Premium: clicking a preview row plays the whole playlist starting at that
+  // track (the footer's prev/next then walk the full list). Free rows open in
+  // Spotify — trackRow handles that when no onPlay is supplied.
+  const trackIds = playlist.tracks.map((t) => t.track_id);
   const list = document.getElementById("recent-tracklist");
   list.innerHTML = "";
   playlist.tracks
     .slice(0, SHOWCASE_TRACK_LIMIT)
-    .forEach((t, i) => list.appendChild(trackRow(i + 1, dbTrack(t), accent, free)));
+    .forEach((t, i) =>
+      list.appendChild(
+        trackRow(
+          i + 1,
+          dbTrack(t),
+          accent,
+          free,
+          free ? undefined : () => startShowcasePlayback(trackIds, i)
+        )
+      )
+    );
 
   function openPlaylist() {
     window.location.assign(`result.html#playlist=${playlist.playlist_id}`);

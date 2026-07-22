@@ -63,7 +63,7 @@ frontend/
     ├── home.js             ✅ hero zoom + manual-mood / scan navigation + live "latest saved playlist" showcase
     ├── mood.js             ✅ mood-card selection → loading
     ├── loading.js          ✅ the real flow: detect_emotion (camera) + generate_playlist → result / error
-    ├── result.js           ✅ real detection playlist + save button + live saved-playlist view (#playlist=<id>)
+    ├── result.js           ✅ real detection playlist + save/un-save toggle + live saved-playlist view (#playlist=<id>)
     ├── shader.js           ✅ optional WebGL "Vibe Canvas" background (opt-in)
     ├── bridge.js           ✅ callPy()/callPyWithTimeout(): pywebviewready wait + timeout
     ├── auth_gate.js        ✅ runs on index.html; routes to login / premium / home
@@ -346,6 +346,12 @@ same treatment as the result page's cover overlay) and, for Premium, plays
 the whole playlist in-app via `playTracks` (filled play glyph). Free accounts
 keep the arrow glyph and the cover opens the playlist view instead.
 
+For Premium accounts the preview **rows are playable too**: clicking a row
+starts the whole playlist in-app at that track (`playTracks(trackIds, i)`), so
+the footer's prev/next then walk the full list. (Earlier these rows rendered
+without an `onPlay` handler, so the hover play glyph did nothing — fixed.) Free
+rows open the song in Spotify, as everywhere else.
+
 ### `photo.html`
 
 A consent gate plus two capture states, as-built in `js/camera.js` (which
@@ -506,17 +512,27 @@ re-default).
 
 Buttons under the title:
 
-- **Save** (`#save-playlist-btn`, bookmark icon): calls
+- **Save / un-save** (`#save-playlist-btn`, bookmark icon — a **toggle**, both
+  views): the **first** save in the fresh view mints the DB row via
   `save_playlist(name, emotion, track_ids, description)` with the current
   (default or user-edited) title and description — **no date stamp in the
   name**; repeat saves of the same mood are tellable apart by the created
-  date in the sidebar subtitle. On success the bookmark fills with the
-  emotion accent, the button stays disabled (double-saving only clutters the
-  sidebar), a toast confirms, `refreshSidebarPlaylists()` (imported from
-  `sidebar.js`) shows the new row live, and the returned `playlist_id` is
-  kept so later edits on the same page update the saved copy. On failure the
-  button re-enables with an error toast. The saved view (`#playlist=<id>`)
-  removes this button — it's already saved.
+  date in the sidebar subtitle. On success the bookmark fills with the emotion
+  accent, the title becomes *"Remove from saved"*, a toast confirms,
+  `refreshSidebarPlaylists()` (imported from `sidebar.js`) shows the new row
+  live, and the returned `playlist_id` is kept so later edits update the saved
+  copy. After that, clicking flips the row's saved flag via
+  `set_playlist_saved(playlist_id, saved)` — a **reversible soft delete**: un-saving
+  hides the playlist from the sidebar but **keeps its id, created date and
+  tracks**, so re-saving (outline bookmark) restores it unchanged. The
+  playlist **stays on screen** in both views (only its sidebar presence
+  changes); because the id is stable, the saved-view hash (`#playlist=<id>`)
+  stays valid across the toggle and a reload still finds the playlist
+  (`load_playlist` loads un-saved rows too). The saved view shows this button
+  **filled from the start** (it's already saved). Orphaned un-saved playlists
+  are purged at app startup (`src/main.py`). Distinct from the **sidebar's
+  Delete** (kebab menu), which is a permanent hard delete. On failure the
+  button re-enables with an error toast.
 - **Play-all** (`#playlist-play-btn`, and the cover's hover overlay — the
   overlay button is tinted to the emotion accent with a dark-navy glyph):
   starts the whole list on the in-app SDK device via `playTracks(trackIds, 0)`
@@ -743,8 +759,9 @@ there.
   results, `No songs found for "q"`, and an error message if the bridge call
   rejects. Esc or clicking outside closes the dropdown; refocusing the input
   with the same text re-opens the cached results.
-- **Row click = play.** Premium: `playTracks([track_id])` (single-track queue
-  on the SDK device, toast on failure). Free: opens the song in Spotify via
+- **Row click = play.** Premium: `playTracks([track_id], 0, "single")`
+  (single-track queue on the SDK device — the `"single"` context makes the
+  footer's Next end the track rather than loop; toast on failure). Free: opens the song in Spotify via
   `openInSpotify` (same degradation as the tracklists).
 - **Add button (playlist_add icon)** opens the **shared add-to-playlists popup**
   (`js/add_to_playlists.js` — also used by the bottom player's add button): a
@@ -817,7 +834,14 @@ initialises the `Spotify.Player` (device name **EchoSoul**, token via the
   `docs/SPOTIFY_INTEGRATION.md`). The transport stays disabled until a
   playback session exists. Shuffle-on shows a small accent **dot under the
   shuffle icon** (`#player-shuffle-dot`) on top of the icon colour change,
-  which alone was too easy to miss (owner request, July 2026).
+  which alone was too easy to miss (owner request, July 2026); the shuffle
+  button is titled *"Shuffle playlist"*. The seek bar maps a click to the
+  **bars' actual extent** (the strip is wider than the bars, so mapping to the
+  strip's box landed the seek left of the cursor — fixed), and **prev/next
+  behave by playback context**: within a playlist Previous restarts the song
+  (or steps back a track within the first 0:02) and Next loops to a fresh round
+  at the end; a standalone track's Previous restarts and Next ends it. See
+  `docs/SPOTIFY_INTEGRATION.md` § "The bottom player".
 - **add button (`#player-add`,** replaced the queue placeholder, July 2026**)**
   opens the shared add-to-playlists popup (`js/add_to_playlists.js`, same one
   as the header search rows) for the **currently playing track**. Because the
@@ -833,8 +857,10 @@ initialises the `Spotify.Player` (device name **EchoSoul**, token via the
   (episodes/ads).
 - **resumes the session across page navigations** — see the Routing section
   above and `docs/SPOTIFY_INTEGRATION.md` for the stash/transfer mechanics.
-- **exports `playTracks(trackIds, startIndex)`**, the one entry point other
-  modules use (result.js).
+- **exports `playTracks(trackIds, startIndex, context)`**, the one entry point
+  other modules use (result.js play-all / per-track, home.js showcase rows,
+  and search.js / create_playlist.js single-track previews with
+  `context = "single"`). `context` defaults to `"playlist"`.
 
 For Free accounts chrome.js doesn't render the player and `playback.js`
 no-ops; on Premium pages the Premium check has already passed at the gate, so

@@ -290,7 +290,7 @@ function resultRow(row) {
       openInSpotify(row.track_name, row.artists, row.track_id);
       return;
     }
-    playTracks([row.track_id]).catch((err) => {
+    playTracks([row.track_id], 0, "single").catch((err) => {
       console.error("playTracks failed:", err);
       showToast(err.message || "Spotify couldn't play this track.");
     });

@@ -5,8 +5,10 @@
  * mood, loading, result, error). Each page is a fresh document, so the SDK
  * reinitialises on every navigation (docs/FRONTEND.md "Routing"); continuity
  * comes from Spotify's server-side session: on the way out the page stashes
- * whether music was playing (sessionStorage.playback_resume) and the next
- * page's SDK device transfers the session to itself, resuming mid-track.
+ * whether music was playing (sessionStorage.playback_resume) and the position
+ * (sessionStorage.playback_position), and the next page's SDK device transfers
+ * the session to itself and seeks back to that position — Spotify's transfer
+ * otherwise resumes a few seconds behind, rewinding the track.
  * src/main.py lifts Chromium's autoplay gate for this (a resumed page has no
  * user gesture yet); if the flag ever stops working the autoplay_failed
  * listener degrades to "press play to resume".
@@ -38,6 +40,16 @@ const VOLUME_KEY = "playback_volume";
 // One forced re-login per session: an SDK authentication_error redirects to
 // the auth gate, but if the problem persists we must not bounce forever.
 const AUTH_REDIRECT_KEY = "playback_auth_redirected";
+// The outgoing page's playback position (ms), stashed alongside RESUME_KEY so
+// the next page can seek back to it after the transfer — Spotify's server-
+// synced position lags a few seconds, which otherwise rewinds the track.
+const POSITION_KEY = "playback_position";
+// The current playback origin: {type:"playlist"|"single", trackIds:[...]}.
+// Drives the prev/next button behaviour and survives page navigation.
+const CONTEXT_KEY = "playback_context";
+// Past this point into the current song, Previous restarts it; before it,
+// Previous steps to the earlier track (standard media-player behaviour).
+const PREV_STEP_MS = 2000;
 
 const els = {
   footer: document.getElementById("app-player"),
@@ -64,6 +76,7 @@ let lastState = null; // last known SDK state (null = no session)
 let hadSession = false; // this page saw a real state at least once
 let stashConsumed = false; // this page's ready handler ran (stash is ours now)
 let tickTimer = null;
+let lastStateAt = 0; // Date.now() when lastState was captured (position clock)
 
 let resolveDevice;
 const deviceReady = new Promise((resolve) => (resolveDevice = resolve));
@@ -87,10 +100,14 @@ function playbackAvailable() {
  * Play an ad-hoc list of catalogue tracks on the in-app device, starting at
  * startIndex. Rejects with a user-presentable Error message on failure.
  */
-export async function playTracks(trackIds, startIndex = 0) {
+export async function playTracks(trackIds, startIndex = 0, context = "playlist") {
   if (!playbackAvailable()) {
     throw new Error("In-app playback isn't available on this account.");
   }
+  // Remember what is playing so the footer's prev/next can tell a playlist
+  // (walks tracks, loops at the end) from a standalone track (prev restarts,
+  // next ends it). Persisted so it survives page navigation.
+  setPlaybackContext(context === "single" ? "single" : "playlist", trackIds);
   const id = await Promise.race([
     deviceReady,
     new Promise((_, reject) =>
@@ -195,24 +212,59 @@ function initSdk() {
 // Pick up where the previous page left off. Only this page's ready handler may
 // clear the stash: an earlier page that never finished connecting (e.g. the
 // short-lived loading page) must leave it for the page that can act on it.
-function consumeResumeStash() {
+async function consumeResumeStash() {
   stashConsumed = true;
   const stash = sessionStorage.getItem(RESUME_KEY);
   if (!stash) return;
-  transferHere(stash === "playing").catch((err) => {
+  const posRaw = sessionStorage.getItem(POSITION_KEY);
+  const resumePos = posRaw === null ? null : Number(posRaw);
+  try {
+    await transferHere(stash === "playing");
+    // Spotify resumes a transfer from its last server-synced position, which
+    // lags a few seconds behind and rewinds the track (seen live). Seek back
+    // to exactly where the previous page left off once the media has loaded.
+    if (stash === "playing" && Number.isFinite(resumePos) && resumePos > PREV_STEP_MS) {
+      await seekAfterTransfer(resumePos);
+    }
+  } catch (err) {
     // The session is gone (played out, or taken over by another device) —
     // stop trying to resume it on every future page.
     console.info("No playback session to resume:", err.message);
     sessionStorage.removeItem(RESUME_KEY);
-  });
+  } finally {
+    sessionStorage.removeItem(POSITION_KEY);
+  }
+}
+
+// A freshly transferred device holds the session's metadata before it finishes
+// loading the audio; seeking too early silently no-ops (seen live). Wait for a
+// live, playing state, then seek once to the stashed position.
+async function seekAfterTransfer(positionMs) {
+  for (let i = 0; i < 10; i++) {
+    const st = await player?.getCurrentState().catch(() => null);
+    if (st && !st.paused && st.duration) break;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  // Swallow seek failures here: the transfer already succeeded, so a hiccup
+  // seeking must not make the caller drop the resume stash.
+  try {
+    const resp = await apiFetch(
+      `/me/player/seek?position_ms=${Math.round(positionMs)}&device_id=${deviceId}`
+    );
+    if (!resp.ok && resp.status !== 204) console.info("resume seek failed:", resp.status);
+  } catch (err) {
+    console.info("resume seek error:", err.message);
+  }
 }
 
 function onPageHide() {
   if (lastState) {
     sessionStorage.setItem(RESUME_KEY, lastState.paused ? "paused" : "playing");
+    sessionStorage.setItem(POSITION_KEY, String(Math.round(currentPositionMs())));
   } else if (stashConsumed && hadSession) {
     // The session existed on this page and ended here; nothing to resume.
     sessionStorage.removeItem(RESUME_KEY);
+    sessionStorage.removeItem(POSITION_KEY);
   }
   try {
     player?.disconnect();
@@ -273,6 +325,7 @@ function setUnavailable(message) {
 
 function renderState(state) {
   lastState = state;
+  if (state) lastStateAt = Date.now();
 
   if (!state) {
     stopTick();
@@ -363,6 +416,76 @@ function stopTick() {
 
 // ---- Controls ------------------------------------------------------------------
 
+// Current playback position, extrapolated from the last SDK state so it stays
+// accurate between the 1s polls (used by the resume stash and by Previous's
+// restart-vs-step-back decision).
+function currentPositionMs() {
+  if (!lastState) return 0;
+  const base = lastState.position || 0;
+  if (lastState.paused) return base;
+  const advanced = base + (Date.now() - lastStateAt);
+  return lastState.duration ? Math.min(advanced, lastState.duration) : advanced;
+}
+
+// Seek to an absolute position, clamped to the track, with an optimistic UI
+// update (the next state push / poll corrects any drift).
+function seek(positionMs) {
+  if (!deviceId || !lastState) return;
+  const pos = Math.round(Math.min(Math.max(positionMs, 0), lastState.duration || positionMs));
+  apiFetch(`/me/player/seek?position_ms=${pos}&device_id=${deviceId}`).catch((err) =>
+    console.error("seek failed:", err)
+  );
+  lastState.position = pos;
+  lastStateAt = Date.now();
+  renderProgress(pos, lastState.duration || 0);
+}
+
+// Playback origin (see CONTEXT_KEY). setPlaybackContext is called from
+// playTracks; getPlaybackContext falls back to an empty playlist context so a
+// missing/legacy stash still drives sensible prev/next behaviour.
+function setPlaybackContext(type, trackIds) {
+  try {
+    sessionStorage.setItem(CONTEXT_KEY, JSON.stringify({ type, trackIds: trackIds || [] }));
+  } catch {
+    /* storage unavailable: prev/next fall back to the default context */
+  }
+}
+
+function getPlaybackContext() {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(CONTEXT_KEY) || "null");
+    if (c && (c.type === "single" || c.type === "playlist") && Array.isArray(c.trackIds)) {
+      return c;
+    }
+  } catch {
+    /* malformed stash: use the default */
+  }
+  return { type: "playlist", trackIds: [] };
+}
+
+// Map a click on the waveform strip to a 0..1 position using the bars' actual
+// extent (the strip can be wider than the bars), so the seek lands exactly
+// under the cursor rather than a bit to its left.
+function seekFractionFromEvent(e) {
+  const bars = els.bars;
+  if (bars.length) {
+    const left = bars[0].getBoundingClientRect().left;
+    const right = bars[bars.length - 1].getBoundingClientRect().right;
+    if (right > left) return Math.min(Math.max((e.clientX - left) / (right - left), 0), 1);
+  }
+  const rect = els.progress.getBoundingClientRect();
+  return Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+}
+
+// Standalone-track "next": nothing follows it, so stop and reset to the start.
+function endCurrentTrack() {
+  player?.pause().catch((err) => console.error("pause failed:", err));
+  seek(0);
+  if (lastState) lastState.paused = true;
+  setPlayIcon(false);
+  stopTick();
+}
+
 // The playing item as an add-to-playlists row, or null when there is nothing
 // addable (no session, or the item is an episode/ad rather than a track).
 // Spotify sometimes relinks a track to a market-specific copy; linked_from
@@ -417,32 +540,54 @@ function wireControls() {
     if (lastState.paused) {
       stopTick();
     } else {
+      lastStateAt = Date.now(); // restart the position clock from here
       startTick();
     }
   });
+  // Previous: a standalone track always restarts; within a playlist, past the
+  // 2s mark restart the current song, otherwise step back to the previous one
+  // (so a first press restarts and a second within 0:02 goes back a track).
   els.prev?.addEventListener("click", () => {
     if (!deviceId || !lastState) return;
+    const ctx = getPlaybackContext();
+    const hasPrev = (lastState.track_window?.previous_tracks?.length || 0) > 0;
+    if (ctx.type === "single" || currentPositionMs() > PREV_STEP_MS || !hasPrev) {
+      seek(0);
+      return;
+    }
+    activateElement();
     apiFetch(`/me/player/previous?device_id=${deviceId}`, undefined, "POST").catch((err) =>
       console.error("previous failed:", err)
     );
   });
+  // Next: a standalone track ends here; within a playlist, advance — and when
+  // it was the last song, start a fresh round of the whole playlist rather
+  // than wrapping to the first track and stopping.
   els.next?.addEventListener("click", () => {
     if (!deviceId || !lastState) return;
-    apiFetch(`/me/player/next?device_id=${deviceId}`, undefined, "POST").catch((err) =>
-      console.error("next failed:", err)
-    );
+    const ctx = getPlaybackContext();
+    if (ctx.type === "single") {
+      endCurrentTrack();
+      return;
+    }
+    if ((lastState.track_window?.next_tracks?.length || 0) > 0) {
+      activateElement();
+      apiFetch(`/me/player/next?device_id=${deviceId}`, undefined, "POST").catch((err) =>
+        console.error("next failed:", err)
+      );
+      return;
+    }
+    if (ctx.trackIds.length) {
+      playTracks(ctx.trackIds, 0, "playlist").catch((err) => {
+        console.error("restart playlist failed:", err);
+        showToast(err.message || "Spotify couldn't restart the playlist.");
+      });
+    }
   });
 
   els.progress?.addEventListener("click", (e) => {
     if (!deviceId || !lastState || !lastState.duration) return;
-    const rect = els.progress.getBoundingClientRect();
-    const fraction = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-    const target = Math.round(fraction * lastState.duration);
-    apiFetch(`/me/player/seek?position_ms=${target}&device_id=${deviceId}`).catch((err) =>
-      console.error("seek failed:", err)
-    );
-    // Optimistic update; the next state push / poll corrects any drift.
-    renderProgress(target, lastState.duration);
+    seek(seekFractionFromEvent(e) * lastState.duration);
   });
 
   // Same popup as the header search rows. ensureInCatalogue: the player can

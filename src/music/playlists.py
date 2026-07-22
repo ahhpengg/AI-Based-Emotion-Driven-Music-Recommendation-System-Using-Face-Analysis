@@ -23,7 +23,7 @@ _INSERT_SONG_SQL = """
 """
 
 _SELECT_HEADER_SQL = """
-    SELECT playlist_id, name, description, source_emotion, created_at, updated_at
+    SELECT playlist_id, name, description, source_emotion, saved, created_at, updated_at
     FROM playlist
     WHERE playlist_id = %s
 """
@@ -42,6 +42,7 @@ _LIST_SQL = """
            (SELECT COUNT(*) FROM playlist_song WHERE playlist_id = p.playlist_id)
                AS track_count
     FROM playlist p
+    WHERE p.saved = 1
     ORDER BY updated_at DESC
     LIMIT %s
 """
@@ -133,6 +134,8 @@ def load_playlist(playlist_id: int) -> dict | None:
         return None
     header["created_at"] = _iso(header["created_at"])
     header["updated_at"] = _iso(header["updated_at"])
+    # TINYINT(1) comes back as 0/1 — hand the frontend a real bool.
+    header["saved"] = bool(header["saved"])
     header["tracks"] = connection.fetchall(_SELECT_SONGS_SQL, (playlist_id,))
     return header
 
@@ -258,9 +261,46 @@ def rename_playlist(playlist_id: int, name: str) -> bool:
     return affected > 0
 
 
+def set_playlist_saved(playlist_id: int, saved: bool) -> bool:
+    """Mark a playlist as saved (shown in the sidebar) or un-saved (hidden).
+
+    Un-saving is a *soft* delete: the row keeps its id, ``created_at`` and
+    songs, so re-saving restores the playlist unchanged — this backs the result
+    page's bookmark toggle. ``updated_at`` is bumped so a re-saved playlist
+    floats to the top of the sidebar (the user just re-added it). Orphaned
+    un-saved playlists are finalised by :func:`purge_unsaved_playlists` at app
+    startup. The sidebar's explicit Delete stays a hard :func:`delete_playlist`.
+
+    Returns True if the playlist exists, False otherwise.
+    """
+    with connection.get_cursor(commit=True) as cur:
+        cur.execute("SELECT 1 FROM playlist WHERE playlist_id = %s", (playlist_id,))
+        if cur.fetchone() is None:
+            return False
+        cur.execute(
+            "UPDATE playlist SET saved = %s, updated_at = CURRENT_TIMESTAMP"
+            " WHERE playlist_id = %s",
+            (1 if saved else 0, playlist_id),
+        )
+    return True
+
+
+def purge_unsaved_playlists() -> int:
+    """Hard-delete every soft-deleted (``saved = 0``) playlist and its songs.
+
+    Called once at app startup: an un-saved playlist stays re-saveable only for
+    the session it was un-saved in (the result page keeps it on screen), so once
+    the app restarts there is nothing left that could re-save it and the
+    deferred delete is finalised. Returns the number of playlists purged.
+    """
+    return connection.execute("DELETE FROM playlist WHERE saved = 0")
+
+
 def delete_playlist(playlist_id: int) -> bool:
     """Delete a playlist and (via ON DELETE CASCADE) its songs.
 
+    A hard delete (the sidebar's explicit Delete) — contrast
+    :func:`set_playlist_saved`, the reversible soft delete behind the bookmark.
     Returns True if a playlist was deleted, False if none matched.
     """
     affected = connection.execute(

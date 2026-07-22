@@ -309,8 +309,12 @@ The SDK is JavaScript-only. It instantiates a Spotify player inside the webview 
 As-built, everything below lives in `frontend/js/playback.js`, an ES module loaded on every chrome page that shows the bottom player (home / mood / loading / result / error). It no-ops entirely for Free accounts (chrome.js doesn't even render the player) and on pages without the footer. It drives the bottom player and exports one function for other modules:
 
 ```javascript
-playTracks(trackIds, startIndex)  // used by result.js: play-all + per-track play
+playTracks(trackIds, startIndex, context)  // context = "playlist" (default) | "single"
+// used by result.js (play-all + per-track), home.js (latest-playlist showcase rows),
+// and search.js / create_playlist.js (single-track previews, context "single")
 ```
+
+`context` is persisted (`sessionStorage.playback_context = {type, trackIds}`) so the footer's prev/next can tell a **playlist** (walk the tracks, loop at the end) from a **standalone track** (prev restarts, next ends it) even after a page navigation — see the transport notes below.
 
 ### Loading the SDK
 
@@ -320,8 +324,8 @@ playTracks(trackIds, startIndex)  // used by result.js: play-all + per-track pla
 
 The app navigates between real HTML files (docs/FRONTEND.md "Routing"), so the SDK — and its Connect device, whose `device_id` changes every time — is torn down and recreated on every page change. Continuity is server-side: Spotify keeps the playback session (queue + position) alive for a while after a device disconnects.
 
-- On `pagehide`, the outgoing page stashes `sessionStorage.playback_resume = "playing" | "paused"` from its last known state, then calls `player.disconnect()`.
-- On `ready`, the incoming page transfers the session to its new device — `PUT /me/player {device_ids: [id], play: stash === "playing"}` — resuming mid-track after a sub-second gap. A failed transfer (typically 404: session expired or taken over by another device) drops the stash.
+- On `pagehide`, the outgoing page stashes `sessionStorage.playback_resume = "playing" | "paused"` **and** `sessionStorage.playback_position` (the current position in ms, extrapolated from the last SDK state so it's accurate between the 1 s polls), then calls `player.disconnect()`.
+- On `ready`, the incoming page transfers the session to its new device — `PUT /me/player {device_ids: [id], play: stash === "playing"}` — then, if it was playing, **seeks back to the stashed position**. Spotify resumes a transfer from its last server-synced position, which lags a few seconds behind and audibly rewinds the track (seen live: the track could restart near its beginning); the seek undoes that. Because seeking a just-transferred device no-ops until its audio has loaded, the seek waits (polling `getCurrentState`) for a live, playing state first. A failed transfer (typically 404: session expired or taken over by another device) drops the stash.
 - **No unconditional transfer on ready.** The CP1-era sketch transferred playback to the webview on every page load; as-built that would silently hijack the user's phone/desktop Spotify session every time the app shows a page. Transfer happens only when *resuming* (stash present) or when the user explicitly plays (`playTracks` carries `device_id`, which switches the active device).
 - Only a page whose SDK actually reached `ready` may clear the stash — the short-lived loading page often navigates away before the SDK finishes connecting and must leave the stash for the result page to consume.
 
@@ -358,20 +362,30 @@ window.onSpotifyWebPlaybackSDKReady = () => {
 
 ### Playing tracks
 
-`playTracks(trackIds, startIndex)`:
+`playTracks(trackIds, startIndex, context = "playlist")`:
 
-1. Waits for the device (`ready`) with a 12 s timeout — a click right after page load must not race the SDK connect.
-2. Calls `player.activateElement()` (we're inside a user-gesture handler — Spotify's recommended autoplay unlock).
-3. `PUT /me/player/play?device_id=<id>` with `{uris: ["spotify:track:...", ...], offset: {position: startIndex}}` — the whole playlist becomes the queue, started at the clicked track, so prev/next on the player walk it.
-4. Retries once (700 ms) on 404: a just-connected device can take a moment to register with Spotify's backend.
+1. Records the playback context (`sessionStorage.playback_context`) so prev/next know whether this is a playlist or a standalone track.
+2. Waits for the device (`ready`) with a 12 s timeout — a click right after page load must not race the SDK connect.
+3. Calls `player.activateElement()` (we're inside a user-gesture handler — Spotify's recommended autoplay unlock).
+4. `PUT /me/player/play?device_id=<id>` with `{uris: ["spotify:track:...", ...], offset: {position: startIndex}}` — the whole list becomes the queue, started at the clicked track, so prev/next on the player walk it.
+5. Retries once (700 ms) on 404: a just-connected device can take a moment to register with Spotify's backend.
 
 The SDK then handles streaming; audio plays out of the system's audio output device.
 
 ### The bottom player (chrome pages)
 
-`chrome.js` renders the player idle ("Nothing playing", transport disabled); `playback.js` drives it from `player_state_changed`: track name / artists / smallest album image, play↔pause icon, shuffle highlight, and the waveform-bar progress display, which doubles as the **seek bar** (a click maps X→fraction→seek). The SDK only pushes state on *changes*, so while music plays a 1 s poll of `player.getCurrentState()` keeps the clock honest (extrapolating the position locally was tried first and ran a dead session's clock to the end of the track — seen live).
+`chrome.js` renders the player idle ("Nothing playing", transport disabled); `playback.js` drives it from `player_state_changed`: track name / artists / smallest album image, play↔pause icon, shuffle highlight (icon tint **plus** a small accent dot — the tint alone was too easy to miss — with the button titled *"Shuffle playlist"*), and the waveform-bar progress display, which doubles as the **seek bar**. The SDK only pushes state on *changes*, so while music plays a 1 s poll of `player.getCurrentState()` keeps the clock honest (extrapolating the position locally was tried first and ran a dead session's clock to the end of the track — seen live).
+
+The waveform strip is wider than its bars, so a click maps X→fraction using the **bars' actual left/right extent** (first bar's left edge to the last bar's right edge), not the strip's bounding box — otherwise the seek landed a bit to the left of the cursor and the user had to aim right of where they wanted (seen live). The bars are laid out `justify-between` so they span the full strip.
 
 **Transport goes through the Web API, not the SDK's local methods** (resume `PUT /me/player/play?device_id=`, skip `POST /me/player/next|previous`, seek `PUT /me/player/seek`, shuffle `PUT /me/player/shuffle`): after a *paused* cross-page transfer the device holds the session's metadata but no loaded media, and the SDK's `togglePlay()`/`nextTrack()`/`seek()` silently no-op (verified live). The API commands make the device load the media first. Pausing stays local (`player.pause()`) — media is always loaded while actually playing — and the play button flips the UI state optimistically so a pause immediately followed by a navigation stashes the right resume state. Volume (hover-revealed slider + mute toggle) uses `player.setVolume` and persists across pages via `sessionStorage.playback_volume` — each page creates a fresh player that would otherwise reset to the default.
+
+**Prev/next depend on the playback context** (`sessionStorage.playback_context`, set by `playTracks`):
+
+- **Within a playlist** — *Previous*: past the first 2 s of the current song it restarts that song; within the first 2 s (e.g. straight after a restart) it steps to the previous track when one exists (`POST /me/player/previous`), so a first press restarts and a second within 0:02 goes back. *Next*: advances (`POST /me/player/next`); on the **last** song it starts a fresh round of the whole playlist (`playTracks(trackIds, 0)`) rather than Spotify's default of wrapping to the first track and stopping.
+- **Standalone track** (context `"single"`, e.g. a header-search result) — *Previous* always restarts the track; *Next* ends it (local `player.pause()` + seek to 0), since nothing follows it.
+
+The current position for the "past 2 s?" test is `currentPositionMs()` — `lastState.position` extrapolated by the elapsed wall-clock since that state, so it's right even between the 1 s polls.
 
 ### Error handling (as-built)
 
